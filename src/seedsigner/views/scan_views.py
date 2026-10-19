@@ -93,6 +93,7 @@ class ScanView(View):
                 from seedsigner.views.psbt_views import PSBTSelectSeedView
                 psbt = self.decoder.get_psbt()
                 self.controller.psbt = psbt
+                self.controller.psbt_bytes = self.decoder.get_data_psbt()
                 self.controller.psbt_parser = None
                 return Destination(PSBTSelectSeedView, skip_current_view=True)
 

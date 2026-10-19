@@ -1,6 +1,8 @@
+import logging
 from gettext import gettext as _
 
-from seedsigner.models.psbt_parser import (PSBTInputOwnershipClaimError,
+from seedsigner.models.psbt_parser import (PSBTBitwasmDisagreementError,
+    PSBTBitwasmRefusedError, PSBTInputOwnershipClaimError,
     PSBTMixedDerivationPathTypesError, PSBTOutputOwnershipClaimError,
     PSBTOutputOwnershipContradictionError, PSBTParser, PSBTSeedCannotSignError,
     PSBTSurplusDerivationPathsError)
@@ -8,6 +10,8 @@ from seedsigner.models.settings import SettingsConstants
 from seedsigner.gui.components import FontAwesomeIconConstants, GUIConstants, SeedSignerIconConstants
 from seedsigner.gui.screens.screen import (RET_CODE__BACK_BUTTON, ButtonListScreen, ButtonOption, LargeIconStatusScreen, WarningScreen, DireWarningScreen, QRDisplayScreen)
 from seedsigner.views.view import BackStackView, MainMenuView, View, Destination
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -102,7 +106,9 @@ class PSBTOverviewView(View):
                 self.controller.psbt_parser = PSBTParser(
                     self.controller.psbt,
                     seed=self.controller.psbt_seed,
-                    network=self.settings.get_value(SettingsConstants.SETTING__NETWORK)
+                    network=self.settings.get_value(SettingsConstants.SETTING__NETWORK),
+                    psbt_bytes=self.controller.psbt_bytes,
+                    multisig_descriptor=self.controller.multisig_wallet_descriptor,
                 )
 
             # Note that in almost every exception case, we set clear_history to disable
@@ -125,6 +131,14 @@ class PSBTOverviewView(View):
 
             except PSBTOutputOwnershipContradictionError:
                 self.set_redirect(Destination(PSBTOutputOwnershipContradictionView, clear_history=True))
+                return
+
+            except PSBTBitwasmRefusedError as e:
+                self.set_redirect(Destination(PSBTBitwasmRefusedView, view_args=dict(reason=str(e)), clear_history=True))
+                return
+
+            except PSBTBitwasmDisagreementError as e:
+                self.set_redirect(Destination(PSBTBitwasmDisagreementView, view_args=dict(reason=str(e)), clear_history=True))
                 return
 
             except PSBTSeedCannotSignError:
@@ -741,9 +755,14 @@ class PSBTFinalizeView(View):
             return Destination(BackStackView)
 
         else:
-            # Sign PSBT
+            # Sign PSBT. Only signer.wasm signs; embit just trims what it wrote for the QR
+            from seedsigner.helpers.bitwasm import BitwasmError
             sig_cnt = PSBTParser.sig_count(psbt)
-            psbt.sign_with(psbt_parser.root)
+            try:
+                psbt = PSBT.parse(psbt_parser.bitwasm_review.sign())
+            except BitwasmError as e:
+                logger.info(f"signer.wasm did not sign: {e}")
+                return Destination(PSBTSigningErrorView)
             trimmed_psbt = PSBTParser.trim(psbt)
 
             if sig_cnt == PSBTParser.sig_count(trimmed_psbt):
@@ -770,6 +789,53 @@ class PSBTSignedQRDisplayView(View):
 
         # We're done with this PSBT. Route back to MainMenuView, which clears all
         # ephemeral data (except in-memory seeds).
+        return Destination(MainMenuView, clear_history=True)
+
+
+
+class PSBTBitwasmRefusedView(View):
+    """
+    Reached when signer.wasm would not sign the psbt (see PSBTBitwasmRefusedError).
+    """
+    DISCARD = ButtonOption("Discard transaction")
+
+    def __init__(self, reason: str = ""):
+        super().__init__()
+        self.reason = reason
+
+    def run(self):
+        self.run_screen(
+            WarningScreen,
+            title=_("Transaction Problem"),
+            status_headline=_("Not supported"),
+            text=_("signer.wasm cannot sign this transaction.") + f"\n{self.reason}",
+            button_data=[self.DISCARD],
+            show_back_button=False,
+        )
+        return Destination(MainMenuView, clear_history=True)
+
+
+
+class PSBTBitwasmDisagreementView(View):
+    """
+    Reached when embit and signer.wasm read the psbt differently (see
+    PSBTBitwasmDisagreementError). One of them is wrong, so this is treated as an attack.
+    """
+    DISCARD = ButtonOption("Discard transaction")
+
+    def __init__(self, reason: str = ""):
+        super().__init__()
+        self.reason = reason
+
+    def run(self):
+        self.run_screen(
+            DireWarningScreen,
+            title=_("Suspicious PSBT"),
+            status_headline=_("Reviews disagree"),
+            text=_("embit and signer.wasm read this transaction differently.") + f"\n{self.reason}",
+            button_data=[self.DISCARD],
+            show_back_button=False,
+        )
         return Destination(MainMenuView, clear_history=True)
 
 
