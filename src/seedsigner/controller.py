@@ -110,6 +110,7 @@ class Controller(Singleton):
     # TODO: Refactor these flow-related attrs that survive across multiple Screens.
     # TODO: Should all in-memory flow-related attrs get wiped on MainMenuView?
     psbt: PSBT = None
+    psbt_bytes: bytes = None
     psbt_seed: Seed = None
     psbt_parser: PSBTParser = None
 
@@ -186,6 +187,7 @@ class Controller(Singleton):
 
         # Store one working psbt in memory
         controller.psbt = None
+        controller.psbt_bytes = None
         controller.psbt_parser = None
 
         # Configure the Renderer
@@ -301,6 +303,7 @@ class Controller(Singleton):
                     self.unverified_address = None
                     self.address_explorer_data = None
                     self.psbt = None
+                    self.psbt_bytes = None
                     self.psbt_parser = None
                     self.psbt_seed = None
                 

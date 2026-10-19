@@ -13,6 +13,9 @@ from seedsigner.models.settings import SettingsConstants
 
 logger = logging.getLogger(__name__)
 
+PSBT_IN_TAP_KEY_SIG = b"\x13"
+
+
 class OPCODES:
     OP_RETURN = 106
 
@@ -122,6 +125,15 @@ class PSBTInputAmountVerificationError(PSBTVerificationError):
     pass
 
 
+class PSBTBitwasmRefusedError(PSBTVerificationError):
+    """
+    signer.wasm (bitwasm-signer) would not sign this psbt: a script, sighash or size it does
+    not support, or a check of its own that failed. Only signer.wasm signs, so the psbt
+    stops here.
+    """
+    pass
+
+
 class PSBTMissingInputUtxoError(PSBTVerificationError):
     """
     An input is missing its utxo, which holds its amount. A psbt supplies the amount in
@@ -175,6 +187,15 @@ class PSBTExtraneousInputScriptError(PSBTVerificationError):
     segwit).
 
     We don't try to decide whether this is an attack or a mistake.
+    """
+    pass
+
+
+class PSBTBitwasmDisagreementError(PSBTVerificationError):
+    """
+    embit's reading of the psbt and signer.wasm's review of the same bytes disagree on the
+    fee, on which outputs come back to this seed, or on where the rest goes. The screens
+    come from one and the signature from the other, so we refuse rather than pick one.
     """
     pass
 
@@ -253,10 +274,15 @@ class PSBTParser():
     HIGH_FEES_WARNING_THRESHOLD = 25
 
 
-    def __init__(self, p: PSBT, seed: Seed, network: str = SettingsConstants.MAINNET):
+    def __init__(self, p: PSBT, seed: Seed, network: str = SettingsConstants.MAINNET, psbt_bytes: bytes = None, multisig_descriptor: Descriptor = None):
         self.psbt: PSBT = p
         self.seed = seed
         self.network = network
+
+        # The bytes as they were scanned, for signer.wasm; embit's re-serialization otherwise
+        self.psbt_bytes = psbt_bytes
+        self.multisig_descriptor = multisig_descriptor
+        self.bitwasm_review = None
 
         self.policy = None
         self.spend_amount = 0
@@ -408,6 +434,8 @@ class PSBTParser():
         rt = self._parse_outputs(child_key_derivation_cache)
         if rt == False:
             return False
+
+        self._check_with_bitwasm()
 
         # Every total is known now, so settle this once rather than per view.
         self.is_high_fee = self.has_high_fee()
@@ -919,6 +947,57 @@ class PSBTParser():
         return True
 
 
+    def _check_with_bitwasm(self):
+        """
+        Has signer.wasm review the same psbt and requires it to agree with the parse above
+        on every output: whether it comes back to this seed, and for the rest, the address
+        and amount. And on the fee. OP_RETURN outputs only have to be external to both.
+
+        One difference is allowed: multisig change, when the descriptor did not register
+        with signer.wasm, is external to it (it cannot know the cosigners) but change here.
+        """
+        from seedsigner.helpers.bitwasm import BitwasmError, BitwasmReview, OWNER_EXTERNAL, TEXT_KIND_OP_RETURN
+
+        try:
+            self.bitwasm_review = BitwasmReview(
+                self.psbt_bytes or self.psbt.serialize(),
+                self.seed.seed_bytes,
+                self.network,
+                str(self.multisig_descriptor) if self.multisig_descriptor else None,
+            )
+        except BitwasmError as e:
+            raise PSBTBitwasmRefusedError(str(e)) from e
+
+        shown = self.bitwasm_review.display
+        vout = self.psbt.tx.vout
+        if len(shown["outputs"]) != len(vout):
+            raise PSBTBitwasmDisagreementError(f"{len(vout)} outputs here, {len(shown['outputs'])} in signer.wasm")
+        if shown["fee"] != self.fee_amount:
+            raise PSBTBitwasmDisagreementError(f"fee {self.fee_amount} here, {shown['fee']} in signer.wasm")
+
+        ours = {c["output_index"] for c in self.change_data}
+        for i, out in enumerate(shown["outputs"]):
+            if out["amount"] != vout[i].value:
+                raise PSBTBitwasmDisagreementError(f"output {i}: amount differs")
+            theirs = out["owner"] != OWNER_EXTERNAL
+            if i in ours:
+                if not theirs and not (self.is_multisig and not self.bitwasm_review.wallet_registered):
+                    raise PSBTBitwasmDisagreementError(f"output {i}: change here, external in signer.wasm")
+            elif theirs:
+                raise PSBTBitwasmDisagreementError(f"output {i}: external here, ours in signer.wasm")
+            elif vout[i].script_pubkey.data[:1] == bytes([OPCODES.OP_RETURN]):
+                if out["text_kind"] != TEXT_KIND_OP_RETURN:
+                    raise PSBTBitwasmDisagreementError(f"output {i}: OP_RETURN here, not in signer.wasm")
+            else:
+                # By script: signer.wasm writes regtest addresses as testnet's tb1
+                try:
+                    theirs_spk = script.address_to_scriptpubkey(out["text"]).data
+                except Exception:
+                    theirs_spk = None
+                if theirs_spk != vout[i].script_pubkey.data:
+                    raise PSBTBitwasmDisagreementError(f"output {i}: address differs")
+
+
     @staticmethod
     def trim(tx):
         trimmed_psbt = psbt.PSBT(tx.tx)
@@ -930,6 +1009,10 @@ class PSBTParser():
                 trimmed_psbt.inputs[i].final_scriptwitness = inp.final_scriptwitness
             else:
                 trimmed_psbt.inputs[i].partial_sigs = inp.partial_sigs
+                # PSBT_IN_TAP_KEY_SIG, which signer.wasm writes and embit 0.8 leaves unparsed.
+                # A new dict: embit's default `unknown` is shared by every scope
+                if PSBT_IN_TAP_KEY_SIG in inp.unknown:
+                    trimmed_psbt.inputs[i].unknown = {PSBT_IN_TAP_KEY_SIG: inp.unknown[PSBT_IN_TAP_KEY_SIG]}
 
         return trimmed_psbt
 
@@ -942,7 +1025,7 @@ class PSBTParser():
                 # Taproot sign
                 cnt += 1
             else:
-                cnt += len(list(inp.partial_sigs.keys()))
+                cnt += len(list(inp.partial_sigs.keys())) + (PSBT_IN_TAP_KEY_SIG in inp.unknown)
 
         return cnt
 
