@@ -43,6 +43,9 @@ class BitwasmError(Exception):
 
 
 def _read(name: str) -> bytes:
+    if sys.implementation.name == "micropython":
+        import bitwasm_modules  # frozen into the firmware by pico/Makefile; the device has no resources/
+        return bitwasm_modules.PARSER
     with open(os.path.join(os.path.dirname(os.path.dirname(__file__)), "resources", "bitwasm", name), "rb") as f:
         return f.read()
 

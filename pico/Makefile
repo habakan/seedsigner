@@ -2,6 +2,7 @@
 #   make unix BITWASM_SIGNER=<bitwasm-signer checkout>   MicroPython's unix port, for the heap and the tests
 BITWASM_SIGNER ?=
 MPY_DIR := ../build/micropython
+WAMR_ROOT ?= $(BITWASM_SIGNER)/third_party/wasm-micro-runtime
 OUT := ../build/pico
 BS = $(BITWASM_SIGNER)
 SIGNER_SRC = $(addprefix $(BS)/, signer/wasm_main.c signer/core.c signer/address.c signer/bip32.c signer/sighash.c \
@@ -20,7 +21,8 @@ $(OUT)/unix/libsigner.a: $(SIGNER_SRC)
 
 unix: $(OUT)/unix/libsigner.a
 	$(MAKE) -C $(MPY_DIR)/ports/unix -j8 USER_C_MODULES=$(abspath modules) \
-	  BITWASM_SIGNER_LIB=$(abspath $(OUT)/unix/libsigner.a)
+	  BITWASM_SIGNER_LIB=$(abspath $(OUT)/unix/libsigner.a) WAMR_ROOT=$(abspath $(WAMR_ROOT)) \
+	  WAMR_LIB_DIR=$(abspath ../build/wamr)
 .PHONY: unix
 
 # SeedSigner's Python as MicroPython runs it: dataclasses expanded, then pico/lib over the result.
@@ -33,6 +35,8 @@ py:
 	  $(MPY_DIR)/lib/micropython-lib/python-stdlib/hmac/hmac.py $(OUT)/py/
 	cp $(MPY_DIR)/lib/micropython-lib/python-stdlib/os-path/os/path.py $(OUT)/py/os/
 	rm $(OUT)/py/seedsigner/hardware/displays/st7789_mpy.py
+	python3 -c "import sys; print('PARSER = ' + repr(open(sys.argv[1], 'rb').read()))" \
+	  ../src/seedsigner/resources/bitwasm/parser.wasm > $(OUT)/py/bitwasm_modules.py
 .PHONY: py
 
 # Every module as MicroPython bytecode, which also proves it parses
@@ -46,7 +50,7 @@ mpy: py
 # such as bitwasm-signer-pico's third_party/riscv-toolchain
 rp2: py
 	@test -n "$(BITWASM_SIGNER)" || { echo "set BITWASM_SIGNER to a bitwasm-signer checkout at the pinned commit"; exit 1; }
-	BITWASM_SIGNER=$(abspath $(BITWASM_SIGNER)) $(MAKE) -C $(MPY_DIR)/ports/rp2 -j8 BOARD=RPI_PICO2 BOARD_VARIANT=RISCV \
+	BITWASM_SIGNER=$(abspath $(BITWASM_SIGNER)) WAMR_ROOT=$(abspath $(WAMR_ROOT)) $(MAKE) -C $(MPY_DIR)/ports/rp2 -j8 BOARD=RPI_PICO2 BOARD_VARIANT=RISCV \
 	  USER_C_MODULES=$(abspath modules/micropython.cmake) FROZEN_MANIFEST=$(abspath manifest.py)
 .PHONY: rp2
 
