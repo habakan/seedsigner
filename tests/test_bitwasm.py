@@ -101,7 +101,11 @@ def test_sign_refuses_a_psbt_swapped_after_review():
 
 
 def test_modules_are_pinned(monkeypatch):
-    monkeypatch.setattr(bitwasm, "_modules", None)
+    monkeypatch.setattr(bitwasm, "_parser", None)
     monkeypatch.setattr(bitwasm, "PARSER_SHA256", "00" * 32)
     with pytest.raises(BitwasmError):
-        bitwasm._load_modules()
+        bitwasm._load_parser()
+    monkeypatch.setattr(bitwasm, "_signer", None)
+    monkeypatch.setattr(bitwasm, "SIGNER_SHA256", "00" * 32)
+    with pytest.raises(ValueError):
+        bitwasm._load_signer()

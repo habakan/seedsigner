@@ -8,11 +8,13 @@ PSBTParser._check_with_bitwasm for what has to agree.
 Seeds are derived inside signer.wasm. It holds one key at a time: the seed last passed to use().
 
 The modules are bitwasm-signer d4b970a's build/parser.wasm and build/signer.wasm, pinned
-by hash. libiwasm (WAMR 2.4.5, classic interpreter) comes from the OS image.
+by hash. libiwasm (WAMR 2.4.5, classic interpreter) comes from the OS image. On MicroPython the
+signer is the same C linked into the firmware, which the Pico could not afford to interpret.
 """
 import hashlib
 import logging
 import os
+import sys
 
 from bitwasm_signer import Instance, Signer, SignerError
 from bitwasm_signer.signer import MAX_INPUTS, NONCE_SIZE, PLAN_N_INPUTS, PLAN_SIZE, SIG_SIZE
@@ -29,7 +31,8 @@ TEXT_KIND_OP_RETURN = 1
 
 P_ERRORS = {1: "MAGIC", 2: "FORMAT", 3: "DUPLICATE", 4: "TX", 5: "UNSUPPORTED", 6: "LIMIT", 7: "UTXO", 8: "SIG"}
 
-_modules = None
+_parser = None
+_signer = None
 _active = None
 
 
@@ -39,21 +42,41 @@ class BitwasmError(Exception):
 
 
 
-def _load_modules():
-    """
-    One parser and one signer instance per process, read and hash-checked on first use.
-    """
-    global _modules
-    if _modules is None:
-        resources = os.path.join(os.path.dirname(os.path.dirname(__file__)), "resources", "bitwasm")
-        with open(os.path.join(resources, "parser.wasm"), "rb") as f:
-            parser_wasm = f.read()
-        with open(os.path.join(resources, "signer.wasm"), "rb") as f:
-            signer_wasm = f.read()
-        if hashlib.sha256(parser_wasm).hexdigest() != PARSER_SHA256:
+def _read(name: str) -> bytes:
+    with open(os.path.join(os.path.dirname(os.path.dirname(__file__)), "resources", "bitwasm", name), "rb") as f:
+        return f.read()
+
+
+
+class _NativeSigner(Signer):
+    """signer.wasm's exports as the firmware's own functions; there are no wasm bytes to hash."""
+    def __init__(self):
+        self._e = Instance(None)
+        self._m = self._e.memory
+        self._reviewed = False
+
+
+
+def _load_parser():
+    """One parser instance per process, read and hash-checked on first use."""
+    global _parser
+    if _parser is None:
+        wasm = _read("parser.wasm")
+        if hashlib.sha256(wasm).digest().hex() != PARSER_SHA256:
             raise BitwasmError("parser.wasm is not the pinned build")
-        _modules = (Instance(parser_wasm), Signer(signer_wasm, sha256=SIGNER_SHA256).init())
-    return _modules
+        _parser = Instance(wasm)
+    return _parser
+
+
+
+def _load_signer() -> Signer:
+    global _signer
+    if _signer is None:
+        if sys.implementation.name == "micropython":
+            _signer = _NativeSigner().init()
+        else:
+            _signer = Signer(_read("signer.wasm"), sha256=SIGNER_SHA256).init()
+    return _signer
 
 
 
@@ -63,7 +86,7 @@ def use(seed, network: str = None) -> Signer:
     A network re-inits the module, which keeps the key but drops any review or multisig wallet.
     """
     global _active
-    S = _load_modules()[1]
+    S = _load_signer()
     if _active is not seed:
         _active = None
         seed.load_into(S)
@@ -76,7 +99,7 @@ def use(seed, network: str = None) -> Signer:
 
 def signer() -> Signer:
     """signer.wasm for what needs no key: new mnemonics and SeedQRs."""
-    return _load_modules()[1]
+    return _load_signer()
 
 
 
@@ -85,15 +108,15 @@ def forget(seed=None):
     global _active
     if seed is None or _active is seed:
         _active = None
-        if _modules is not None:
-            _modules[1].unload()
+        if _signer is not None:
+            _signer.unload()
 
 
 
 class Wordlist:
     """signer.wasm's English wordlist, read from its memory rather than copied into the heap."""
     def __init__(self):
-        S = _load_modules()[1]
+        S = _load_signer()
         self._m, self._at = S._m, S._e.signer_wordlist()
 
     def __len__(self):
@@ -150,7 +173,7 @@ class BitwasmReview:
 
 
     def _review(self) -> dict:
-        P = _load_modules()[0]
+        P = _load_parser()
         S = use(self.seed, self.network)
 
         self.wallet_registered = False
@@ -185,7 +208,7 @@ class BitwasmReview:
 
     def sign(self) -> bytes:
         """The signed psbt as parser.wasm writes it."""
-        P = _load_modules()[0]
+        P = _load_parser()
         if self._review() != self.display:
             raise BitwasmError("the transaction changed after it was reviewed")
         S = use(self.seed)

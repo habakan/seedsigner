@@ -145,7 +145,10 @@ def b58check_decode(s: str) -> bytes:
     n = 0
     for c in s:
         n = n * 58 + _B58.index(c)
-    raw = n.to_bytes((n.bit_length() + 7) // 8, "big")
+    raw = b""
+    while n:  # MicroPython's int has no bit_length()
+        n, r = divmod(n, 256)
+        raw = bytes([r]) + raw
     raw = bytes(len(s) - len(s.lstrip("1"))) + raw
     payload, checksum = raw[:-4], raw[-4:]
     if hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4] != checksum:

@@ -1,6 +1,6 @@
 # SeedSigner on MicroPython, with bitwasm-signer's signer linked natively (docs/pico.md).
 #   make unix BITWASM_SIGNER=<bitwasm-signer checkout>   MicroPython's unix port, for the heap and the tests
-BITWASM_SIGNER ?= $(error set BITWASM_SIGNER to a bitwasm-signer checkout at the pinned commit)
+BITWASM_SIGNER ?=
 MPY_DIR := ../build/micropython
 OUT := ../build/pico
 BS = $(BITWASM_SIGNER)
@@ -13,6 +13,7 @@ SIGNER_FLAGS = -Os -DNDEBUG -Wno-unused-function -I$(BS)/signer -I$(BS)/parser/c
   -DUSE_EXTERNAL_DEFAULT_CALLBACKS=1 -DCOMB_BLOCKS=2 -DCOMB_TEETH=5
 
 $(OUT)/unix/libsigner.a: $(SIGNER_SRC)
+	@test -n "$(BITWASM_SIGNER)" || { echo "set BITWASM_SIGNER to a bitwasm-signer checkout at the pinned commit"; exit 1; }
 	mkdir -p $(OUT)/unix/obj
 	cd $(OUT)/unix/obj && $(CC) $(SIGNER_FLAGS) -c $(abspath $(SIGNER_SRC))
 	rm -f $@ && ar rcs $@ $(OUT)/unix/obj/*.o
@@ -21,3 +22,13 @@ unix: $(OUT)/unix/libsigner.a
 	$(MAKE) -C $(MPY_DIR)/ports/unix -j8 USER_C_MODULES=$(abspath modules) \
 	  BITWASM_SIGNER_LIB=$(abspath $(OUT)/unix/libsigner.a)
 .PHONY: unix
+
+# SeedSigner's Python as MicroPython runs it: dataclasses expanded, then pico/lib over the result
+py:
+	rm -rf $(OUT)/py
+	python3 tools/to_micropython.py $(OUT)/py ../src/seedsigner ../src/bitwasm_signer
+	cp -R lib/. $(OUT)/py/
+	cp $(MPY_DIR)/lib/micropython-lib/python-stdlib/logging/logging.py \
+	  $(MPY_DIR)/lib/micropython-lib/python-stdlib/hmac/hmac.py $(OUT)/py/
+	cp $(MPY_DIR)/lib/micropython-lib/python-stdlib/os-path/os/path.py $(OUT)/py/os/
+.PHONY: py

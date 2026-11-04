@@ -29,9 +29,8 @@ def calculate_checksum(mnemonic: list | str, wordlist_language_code: str = Setti
         word.
     """
     if type(mnemonic) == str:
-        import re
-        # split on commas or spaces
-        mnemonic = re.findall(r'[^,\s]+', mnemonic)
+        # split on commas or spaces (MicroPython's re has no findall)
+        mnemonic = mnemonic.replace(",", " ").split()
 
     if len(mnemonic) in [11, 23]:
         temp_final_word = Seed.get_wordlist(wordlist_language_code)[0]
