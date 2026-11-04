@@ -1862,6 +1862,7 @@ class SeedAddressVerificationView(View):
             descriptor=self.controller.multisig_wallet_descriptor,
             script_type=self.script_type,
             embit_network=embit_network,
+            network=self.network,
             derivation_path=self.derivation_path,
             threadsafe_counter=self.threadsafe_counter,
             verified_index=self.verified_index,
@@ -1942,7 +1943,7 @@ class SeedAddressVerificationView(View):
 
 
     class BruteForceAddressVerificationThread(BaseThread):
-        def __init__(self, address: str, seed: Seed, descriptor: Descriptor, script_type: str, embit_network: str, derivation_path: str, threadsafe_counter: ThreadsafeCounter, verified_index: ThreadsafeCounter, verified_index_is_change: ThreadsafeCounter):
+        def __init__(self, address: str, seed: Seed, descriptor: Descriptor, script_type: str, embit_network: str, network: str, derivation_path: str, threadsafe_counter: ThreadsafeCounter, verified_index: ThreadsafeCounter, verified_index_is_change: ThreadsafeCounter):
             """
                 Either seed or descriptor will be None
             """
@@ -1957,12 +1958,12 @@ class SeedAddressVerificationView(View):
             self.verified_index = verified_index
             self.verified_index_is_change = verified_index_is_change
 
-            if self.seed:
-                self.xpub = self.seed.get_xpub(wallet_path=self.derivation_path, network=Settings.get_instance().get_value(SettingsConstants.SETTING__NETWORK))
+            # The address's network: signer.wasm derives only the coin type the path was built for
+            self.network = network
 
 
         def run(self):
-            from seedsigner.helpers import embit_utils
+            from seedsigner.helpers import wallet
             while self.keep_running:
                 if self.threadsafe_counter.cur_count % 10 == 0:
                     logger.info(f"Incremented to {self.threadsafe_counter.cur_count}")
@@ -1970,12 +1971,13 @@ class SeedAddressVerificationView(View):
                 i = self.threadsafe_counter.cur_count
 
                 if self.descriptor:
+                    from seedsigner.helpers import embit_utils
                     receive_address = embit_utils.get_multisig_address(descriptor=self.descriptor, index=i, is_change=False, embit_network=self.embit_network)
                     change_address = embit_utils.get_multisig_address(descriptor=self.descriptor, index=i, is_change=True, embit_network=self.embit_network)
 
                 else:
-                    receive_address = embit_utils.get_single_sig_address(xpub=self.xpub, script_type=self.script_type, index=i, is_change=False, embit_network=self.embit_network)
-                    change_address = embit_utils.get_single_sig_address(xpub=self.xpub, script_type=self.script_type, index=i, is_change=True, embit_network=self.embit_network)
+                    receive_address = wallet.address(self.seed, self.derivation_path, self.network, False, i)
+                    change_address = wallet.address(self.seed, self.derivation_path, self.network, True, i)
                     
                 if self.address == receive_address:
                     self.verified_index.set_value(i)

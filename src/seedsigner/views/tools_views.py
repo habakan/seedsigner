@@ -604,15 +604,14 @@ class ToolsAddressExplorerAddressTypeView(View):
             elif seed_derivation_override:
                 derivation_path = seed_derivation_override
             else:
-                from seedsigner.helpers import embit_utils
-                derivation_path = embit_utils.get_standard_derivation_path(
+                from seedsigner.helpers import wallet
+                derivation_path = wallet.get_standard_derivation_path(
                     network=self.network,
                     wallet_type=SettingsConstants.SINGLE_SIG,
                     script_type=self.script_type,
                 )
 
             data["derivation_path"] = derivation_path
-            data["xpub"] = self.seed.get_xpub(derivation_path, network=self.network)
         
         else:
             data["wallet_descriptor"] = self.controller.multisig_wallet_descriptor
@@ -691,7 +690,6 @@ class ToolsAddressExplorerAddressListView(View):
         else:
             try:
                 from seedsigner.gui.screens.screen import LoadingScreenThread
-                from seedsigner.helpers import embit_utils
                 # TRANSLATOR_NOTE: a status message that our payment addresses are being calculated
                 self.loading_screen = LoadingScreenThread(text=_("Calculating addrs..."))
                 self.loading_screen.start()
@@ -699,12 +697,13 @@ class ToolsAddressExplorerAddressListView(View):
                 if addr_storage_key not in data:
                     data[addr_storage_key] = []
 
-                if "xpub" in data:
+                if data.get("seed") is not None:
                     # Single sig explore from seed
                     if "script_type" in data and data["script_type"] != SettingsConstants.CUSTOM_DERIVATION:
                         # Standard derivation path
+                        from seedsigner.helpers import wallet
                         for i in range(self.start_index, self.start_index + addrs_per_screen):
-                            address = embit_utils.get_single_sig_address(xpub=data["xpub"], script_type=data["script_type"], index=i, is_change=self.is_change, embit_network=data["embit_network"])
+                            address = wallet.address(data["seed"], data["derivation_path"], data["network"], self.is_change, i)
                             addresses.append(address)
                             data[addr_storage_key].append(address)
                     else:
@@ -712,6 +711,7 @@ class ToolsAddressExplorerAddressListView(View):
                         raise Exception(_("Custom Derivation address explorer not yet implemented"))
 
                 elif "wallet_descriptor" in data:
+                    from seedsigner.helpers import embit_utils
                     from embit.descriptor import Descriptor
                     descriptor: Descriptor = data["wallet_descriptor"]
                     if descriptor.is_basic_multisig:

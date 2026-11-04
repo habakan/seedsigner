@@ -274,3 +274,12 @@ def sign_message(seed, derivation_path: str, network: str, message: bytes) -> st
     # signer.wasm writes BIP137's header for the script; the recovery id is its low two bits
     sig = bytes([31 + ((sig[0] - 27) & 3)]) + sig[1:]
     return b2a_base64(sig).strip().decode()
+
+
+
+def address(seed, derivation_path: str, network: str, is_change: bool, index: int) -> str:
+    """The single sig address at index on the receive or change chain of a standard account path."""
+    purpose, account = standard_account(derivation_path, network)
+    if purpose == 48:
+        raise UnsupportedDerivation("signer.wasm lists single sig addresses only")
+    return for_network(bitwasm.use(seed, network).address(purpose, account, int(is_change), index), network)

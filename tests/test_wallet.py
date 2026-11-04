@@ -35,3 +35,14 @@ def test_sign_message_matches_embit(network, coin, path):
 def test_sign_message_refuses_what_signer_wasm_does_not_sign(path, network):
     with pytest.raises(wallet.UnsupportedDerivation):
         wallet.sign_message(SEED, path, network, b"hello")
+
+
+@pytest.mark.parametrize("network,coin", [(SC.MAINNET, "0h"), (SC.TESTNET, "1h"), (SC.REGTEST, "1h")])
+@pytest.mark.parametrize("purpose,script_type", [("49h", SC.NESTED_SEGWIT), ("84h", SC.NATIVE_SEGWIT), ("86h", SC.TAPROOT)])
+def test_address_matches_embit(network, coin, purpose, script_type):
+    path = f"m/{purpose}/{coin}/1h"
+    xpub = SEED.get_xpub(path, network=network)
+    for is_change in (False, True):
+        for i in (0, 1, 99):
+            expected = embit_utils.get_single_sig_address(xpub, script_type, i, is_change, embit_utils.get_embit_network_name(network))
+            assert wallet.address(SEED, path, network, is_change, i) == expected
