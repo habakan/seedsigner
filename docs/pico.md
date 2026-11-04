@@ -46,6 +46,25 @@ runs the signer's C natively, keeping only the parser, which reads untrusted inp
 build will do the same: the same C as `signer.wasm`, linked natively behind the same `signer_*`
 functions, so the Python side does not change.
 
+## SeedSigner's Python on the Pico 2
+
+MicroPython 1.29.0 (RPI_PICO2, RISC-V) with the signer linked natively (`pico/modules/bitwasm`), and
+SeedSigner's own `models/seed.py`, `helpers/wallet.py` and `helpers/mnemonic_generation.py` run as they
+are. `pico/tests/smoke.py` prints the same lines on the device as on CPython: fingerprint, SLIP-132 xpubs,
+mainnet and regtest addresses, a BIP137 message signature, a BIP85 child, dice and checksum words.
+
+| `pico/tests/bench.py`, modules mounted over USB as .mpy | |
+|---|---:|
+| seed from mnemonic (PBKDF2) | 0.55 s |
+| account xpub / one address / ten addresses | 65 ms / 27 ms / 271 ms |
+| BIP137 message signature | 81 ms |
+| heap after importing and using them | 67 KB, 321 KB free |
+
+```sh
+make -C pico rp2 BITWASM_SIGNER=<bitwasm-signer> PICO_TOOLCHAIN_PATH=<RISC-V GCC>   # then flash firmware.elf
+make -C pico mpy && make -C pico device-smoke PORT=/dev/cu.usbmodem...
+```
+
 ## What the Pico build gives up
 
 Whatever `signer.wasm` does not do: Electrum seeds, non-English wordlists, legacy P2PKH, custom

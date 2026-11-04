@@ -40,3 +40,15 @@ mpy: py
 	cd $(OUT)/py && find . -name '*.py' ! -name st7789_mpy.py | while read f; do \
 	  mkdir -p ../mpy/$$(dirname $$f) && $(abspath $(MPY_DIR))/mpy-cross/build/mpy-cross -o ../mpy/$${f%.py}.mpy $$f || exit 1; done
 .PHONY: mpy
+
+# MicroPython for the Pico 2's RISC-V cores with the native signer. PICO_TOOLCHAIN_PATH is a RISC-V GCC,
+# such as bitwasm-signer-pico's third_party/riscv-toolchain
+rp2:
+	@test -n "$(BITWASM_SIGNER)" || { echo "set BITWASM_SIGNER to a bitwasm-signer checkout at the pinned commit"; exit 1; }
+	BITWASM_SIGNER=$(abspath $(BITWASM_SIGNER)) $(MAKE) -C $(MPY_DIR)/ports/rp2 -j8 BOARD=RPI_PICO2 BOARD_VARIANT=RISCV \
+	  USER_C_MODULES=$(abspath modules/micropython.cmake)
+.PHONY: rp2
+
+# Run a script on the device with the modules mounted from the host: make device-smoke PORT=/dev/cu.usbmodem...
+device-%:
+	mpremote connect $(PORT) mount $(OUT)/mpy run tests/$*.py
