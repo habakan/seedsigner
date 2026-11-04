@@ -11,50 +11,14 @@ from embit.util import secp256k1
 
 
 from seedsigner.models.settings_definition import SettingsConstants
+# Moved to wallet, which needs no embit; kept importable here
+from seedsigner.helpers.wallet import get_embit_network_name, get_standard_derivation_path, parse_derivation_path
 
 
 """
     Collection of generic embit-powered util methods.
 """
 # TODO: PR these directly into `embit`? Or replace with new/existing methods already in `embit`?
-
-
-# TODO: Refactor `wallet_type` to conform to our `sig_type` naming convention
-def get_standard_derivation_path(network: str = SettingsConstants.MAINNET, wallet_type: str = SettingsConstants.SINGLE_SIG, script_type: str = SettingsConstants.NATIVE_SEGWIT) -> str:
-    if network == SettingsConstants.MAINNET:
-        network_path = "0'"
-    elif network == SettingsConstants.TESTNET:
-        network_path = "1'"
-    elif network == SettingsConstants.REGTEST:
-        network_path = "1'"
-    else:
-        raise Exception("Unexpected network")
-
-    if wallet_type == SettingsConstants.SINGLE_SIG:
-        if script_type == SettingsConstants.LEGACY_P2PKH:
-            return f"m/44'/{network_path}/0'"
-        elif script_type == SettingsConstants.NESTED_SEGWIT:
-            return f"m/49'/{network_path}/0'"
-        elif script_type == SettingsConstants.NATIVE_SEGWIT:
-            return f"m/84'/{network_path}/0'"
-        elif script_type == SettingsConstants.TAPROOT:
-            return f"m/86'/{network_path}/0'"
-        else:
-            raise Exception("Unexpected script type")
-
-    elif wallet_type == SettingsConstants.MULTISIG:
-        if script_type == SettingsConstants.LEGACY_P2PKH:
-            return f"m/45'" #BIP-45
-        elif script_type == SettingsConstants.NESTED_SEGWIT:
-            return f"m/48'/{network_path}/0'/1'"
-        elif script_type == SettingsConstants.NATIVE_SEGWIT:
-            return f"m/48'/{network_path}/0'/2'"
-        elif script_type == SettingsConstants.TAPROOT:
-            raise Exception("Taproot multisig not yet supported")
-        else:
-            raise Exception("Unexpected script type")
-    else:
-        raise Exception("Unexpected wallet type")    # checks that all inputs are from the same wallet
 
 
 
@@ -109,82 +73,6 @@ def get_multisig_policy(descriptor: Descriptor) -> tuple:
     if not descriptor.is_basic_multisig:
         raise ValueError(f"Expected a basic multisig descriptor, got: {descriptor.brief_policy}")
     return (str(descriptor.miniscript.args[0]), str(len(descriptor.keys)))
-
-
-
-def get_embit_network_name(settings_name):
-    """ Convert SeedSigner SettingsConstants for `network` to embit's NETWORK key """
-    lookup = {
-        SettingsConstants.MAINNET: "main",
-        SettingsConstants.TESTNET: "test",
-        SettingsConstants.REGTEST: "regtest",
-    }
-    return lookup.get(settings_name)
-
-
-
-def parse_derivation_path(derivation_path: str) -> dict:
-    """
-    Parses a derivation path into its related SettingsConstants equivalents.
-
-    Primarily only supports single sig derivation paths.
-
-    May return None for fields it cannot parse.
-    """
-    # Support either m/44'/... or m/44h/... style
-    derivation_path = derivation_path.replace("'", "h")
-
-    sections = derivation_path.split("/")
-
-    if sections[1] == "48h":
-        # So far this helper is only meant for single sig message signing
-        raise Exception("Not implemented")
-
-    lookups = {
-        "script_types": {
-            "44h": SettingsConstants.LEGACY_P2PKH,
-            "49h": SettingsConstants.NESTED_SEGWIT,
-            "84h": SettingsConstants.NATIVE_SEGWIT,
-            "86h": SettingsConstants.TAPROOT,
-        },
-        "networks": {
-            "0h": SettingsConstants.MAINNET,
-            "1h": [SettingsConstants.TESTNET, SettingsConstants.REGTEST],
-        }
-    }
-
-    details = dict()
-    details["script_type"] = lookups["script_types"].get(sections[1])
-    if not details["script_type"]:
-        details["script_type"] = SettingsConstants.CUSTOM_DERIVATION
-    details["network"] = lookups["networks"].get(sections[2])
-
-    # Check if there's a standard change path
-    if sections[-2] in ["0", "1"]:
-        details["is_change"] = sections[-2] == "1"
-    else:
-        details["is_change"] = None
-
-    # Check if there's a standard address index
-    if sections[-1].isdigit():
-        details["index"] = int(sections[-1])
-    else:
-        details["index"] = None
-
-    if details["is_change"] is not None and details["index"] is not None:
-        # standard change and addr index; safe to truncate to the wallet level
-        details["wallet_derivation_path"] = "/".join(sections[:-2])
-    else:
-        details["wallet_derivation_path"] = None
-
-    details["clean_match"] = True
-    for k, v in details.items():
-        if v is None:
-            # At least one field couldn't be parsed
-            details["clean_match"] = False
-            break
-
-    return details
 
 
 

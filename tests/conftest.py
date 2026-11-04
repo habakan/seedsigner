@@ -8,6 +8,7 @@ NO_PREVTX = "signer.wasm requires non_witness_utxo for segwit v0 inputs"
 COIN_TYPE = "the fixture's paths are not this network's BIP44 coin type (or Electrum's m/0h)"
 MALFORMED = "a fixture parser.wasm rejects: no outputs, or a non_witness_utxo that is not the input's"
 ALREADY_SIGNED = "signer.wasm has nothing to sign when this seed's signature is already there"
+MESSAGE_MAX = "signer.wasm signs messages of at most 512 bytes; the multipage scenario's is 576"
 NOT_STANDARD = "signer.wasm derives only m/49h, m/84h, m/86h and m/48h/.../2h, with this network's coin type"
 
 BITWASM_REFUSES = {
@@ -35,6 +36,7 @@ BITWASM_REFUSES = {
     "test_encodepsbtqr.py::test_ur_xpub_qr": NOT_STANDARD,  # mainnet with m/48h/1h; the testnet half is its own test
     "test_flows_seed.py::TestSeedFlows::test_export_xpub_custom_derivation_flow": NOT_STANDARD,
     "test_flows_seed.py::TestSeedFlows::test_export_xpub_electrum_seed_flow": NOT_STANDARD,
+    "test_flows_seed.py::TestMessageSigningFlows::test_sign_message_flow": MESSAGE_MAX,
 }
 
 

@@ -2102,7 +2102,7 @@ class SeedSignMessageStartView(View):
     load a seed first.
     """
     def __init__(self, derivation_path: str, message: str):
-        from seedsigner.helpers import embit_utils
+        from seedsigner.helpers import wallet
         super().__init__()
         self.derivation_path = derivation_path
         self.message = message
@@ -2112,9 +2112,15 @@ class SeedSignMessageStartView(View):
             return
 
         # calculate the actual receive address
-        addr_format = embit_utils.parse_derivation_path(derivation_path)
-        if not addr_format["clean_match"]:
+        addr_format = wallet.parse_derivation_path(derivation_path)
+        # signer.wasm signs messages for P2SH-P2WPKH and P2WPKH only
+        if not addr_format["clean_match"] or addr_format["script_type"] not in (SettingsConstants.NESTED_SEGWIT, SettingsConstants.NATIVE_SEGWIT):
             self.set_redirect(Destination(NotYetImplementedView, view_args=dict(text=f"Signing messages for custom derivation paths not supported")))
+            self.controller.resume_main_flow = None
+            return
+
+        if len(message.encode()) > wallet.MESSAGE_MAX:
+            self.set_redirect(Destination(NotYetImplementedView, view_args=dict(text=f"Messages longer than {wallet.MESSAGE_MAX} bytes not supported")))
             self.controller.resume_main_flow = None
             return
 
@@ -2177,7 +2183,7 @@ class SeedSignMessageConfirmMessageView(View):
 
 class SeedSignMessageConfirmAddressView(View):
     def __init__(self):
-        from seedsigner.helpers import embit_utils
+        from seedsigner.helpers import wallet
         super().__init__()
         data = self.controller.sign_message_data
         seed = data.get("seed")
@@ -2204,9 +2210,7 @@ class SeedSignMessageConfirmAddressView(View):
                 self.controller.sign_message_data = None
                 return
 
-        xpub = seed.get_xpub(wallet_path=addr_format["wallet_derivation_path"], network=addr_format["network"])
-        embit_network = embit_utils.get_embit_network_name(addr_format["network"])
-        self.address = embit_utils.get_single_sig_address(xpub=xpub, script_type=addr_format["script_type"], index=addr_format["index"], is_change=addr_format["is_change"], embit_network=embit_network)
+        self.address = wallet.message_address(seed, self.derivation_path, addr_format["network"], data["message"].encode())
 
 
     def run(self):
@@ -2230,7 +2234,7 @@ class SeedSignMessageSignedMessageQRView(View):
     Displays the signed message as a QR code.
     """
     def __init__(self):
-        from seedsigner.helpers import embit_utils
+        from seedsigner.helpers import wallet
         super().__init__()
         data = self.controller.sign_message_data
 
@@ -2238,7 +2242,7 @@ class SeedSignMessageSignedMessageQRView(View):
         derivation_path = data["derivation_path"]
         message: str = data["message"]
 
-        self.signed_message = embit_utils.sign_message(seed_bytes=self.seed.seed_bytes, derivation=derivation_path, msg=message.encode())
+        self.signed_message = wallet.sign_message(self.seed, derivation_path, data["addr_format"]["network"], message.encode())
 
 
     def run(self):

@@ -30,6 +30,11 @@ Each stage ends with a measurement that decides whether the next one is worth do
 Whatever `signer.wasm` does not do: Electrum seeds, non-English wordlists, legacy P2PKH, custom
 derivation paths, and multisig beyond three keys. The tests that expect those stay on CPython.
 
+## Needed from bitwasm-signer
+
+- **An address at a given index.** `signer_find_address` searches; the address explorer lists.
+- **Messages longer than 512 bytes.** SeedSigner has no limit, and one of its test messages is 576.
+
 ## Decisions
 
 - **No `seed_bytes`.** The seed is derived inside `signer.wasm` and never leaves it. The active seed's

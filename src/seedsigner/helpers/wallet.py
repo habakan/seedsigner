@@ -6,6 +6,8 @@ with this network's coin type. Anything else raises UnsupportedDerivation.
 """
 import hashlib
 
+from binascii import b2a_base64
+
 from seedsigner.helpers import bitwasm
 from seedsigner.models.settings_definition import SettingsConstants
 
@@ -21,6 +23,121 @@ _VERSIONS = {
 
 class UnsupportedDerivation(Exception):
     pass
+
+
+
+# TODO: Refactor `wallet_type` to conform to our `sig_type` naming convention
+def get_standard_derivation_path(network: str = SettingsConstants.MAINNET, wallet_type: str = SettingsConstants.SINGLE_SIG, script_type: str = SettingsConstants.NATIVE_SEGWIT) -> str:
+    if network == SettingsConstants.MAINNET:
+        network_path = "0'"
+    elif network == SettingsConstants.TESTNET:
+        network_path = "1'"
+    elif network == SettingsConstants.REGTEST:
+        network_path = "1'"
+    else:
+        raise Exception("Unexpected network")
+
+    if wallet_type == SettingsConstants.SINGLE_SIG:
+        if script_type == SettingsConstants.LEGACY_P2PKH:
+            return f"m/44'/{network_path}/0'"
+        elif script_type == SettingsConstants.NESTED_SEGWIT:
+            return f"m/49'/{network_path}/0'"
+        elif script_type == SettingsConstants.NATIVE_SEGWIT:
+            return f"m/84'/{network_path}/0'"
+        elif script_type == SettingsConstants.TAPROOT:
+            return f"m/86'/{network_path}/0'"
+        else:
+            raise Exception("Unexpected script type")
+
+    elif wallet_type == SettingsConstants.MULTISIG:
+        if script_type == SettingsConstants.LEGACY_P2PKH:
+            return f"m/45'" #BIP-45
+        elif script_type == SettingsConstants.NESTED_SEGWIT:
+            return f"m/48'/{network_path}/0'/1'"
+        elif script_type == SettingsConstants.NATIVE_SEGWIT:
+            return f"m/48'/{network_path}/0'/2'"
+        elif script_type == SettingsConstants.TAPROOT:
+            raise Exception("Taproot multisig not yet supported")
+        else:
+            raise Exception("Unexpected script type")
+    else:
+        raise Exception("Unexpected wallet type")    # checks that all inputs are from the same wallet
+
+
+
+def get_embit_network_name(settings_name):
+    """ Convert SeedSigner SettingsConstants for `network` to embit's NETWORK key """
+    lookup = {
+        SettingsConstants.MAINNET: "main",
+        SettingsConstants.TESTNET: "test",
+        SettingsConstants.REGTEST: "regtest",
+    }
+    return lookup.get(settings_name)
+
+
+
+def parse_derivation_path(derivation_path: str) -> dict:
+    """
+    Parses a derivation path into its related SettingsConstants equivalents.
+
+    Primarily only supports single sig derivation paths.
+
+    May return None for fields it cannot parse.
+    """
+    # Support either m/44'/... or m/44h/... style
+    derivation_path = derivation_path.replace("'", "h")
+
+    sections = derivation_path.split("/")
+
+    if sections[1] == "48h":
+        # So far this helper is only meant for single sig message signing
+        raise Exception("Not implemented")
+
+    lookups = {
+        "script_types": {
+            "44h": SettingsConstants.LEGACY_P2PKH,
+            "49h": SettingsConstants.NESTED_SEGWIT,
+            "84h": SettingsConstants.NATIVE_SEGWIT,
+            "86h": SettingsConstants.TAPROOT,
+        },
+        "networks": {
+            "0h": SettingsConstants.MAINNET,
+            "1h": [SettingsConstants.TESTNET, SettingsConstants.REGTEST],
+        }
+    }
+
+    details = dict()
+    details["script_type"] = lookups["script_types"].get(sections[1])
+    if not details["script_type"]:
+        details["script_type"] = SettingsConstants.CUSTOM_DERIVATION
+    details["network"] = lookups["networks"].get(sections[2])
+
+    # Check if there's a standard change path
+    if sections[-2] in ["0", "1"]:
+        details["is_change"] = sections[-2] == "1"
+    else:
+        details["is_change"] = None
+
+    # Check if there's a standard address index
+    if sections[-1].isdigit():
+        details["index"] = int(sections[-1])
+    else:
+        details["index"] = None
+
+    if details["is_change"] is not None and details["index"] is not None:
+        # standard change and addr index; safe to truncate to the wallet level
+        details["wallet_derivation_path"] = "/".join(sections[:-2])
+    else:
+        details["wallet_derivation_path"] = None
+
+    details["clean_match"] = True
+    for k, v in details.items():
+        if v is None:
+            # At least one field couldn't be parsed
+            details["clean_match"] = False
+            break
+
+    return details
 
 
 
@@ -88,3 +205,72 @@ def account_xpub(seed, derivation_path: str, network: str, sig_type: str = Setti
     version = seed.detect_version(derivation_path, network, sig_type)
     raw = version + raw[4:]
     return {"xpub": b58check_encode(raw), "raw": raw, "fingerprint": S.fingerprint}
+
+
+
+_BECH32 = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+
+
+
+def _polymod(values) -> int:
+    chk = 1
+    for v in values:
+        top = chk >> 25
+        chk = (chk & 0x1ffffff) << 5 ^ v
+        for i, g in enumerate((0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3)):
+            chk ^= g if (top >> i) & 1 else 0
+    return chk
+
+
+
+def _hrp_values(hrp: str) -> list:
+    return [ord(c) >> 5 for c in hrp] + [0] + [ord(c) & 31 for c in hrp]
+
+
+
+def for_network(address: str, network: str) -> str:
+    """
+    signer.wasm knows mainnet and testnet; regtest's segwit addresses differ only in their bech32
+    prefix (its P2SH ones are testnet's), so `tb1` is rewritten as `bcrt1` with a new checksum.
+    """
+    if network != SettingsConstants.REGTEST or not address.startswith("tb1"):
+        return address
+    data = [_BECH32.index(c) for c in address[3:]]
+    const = _polymod(_hrp_values("tb") + data)
+    if const not in (1, 0x2bc830a3):  # bech32, bech32m
+        raise ValueError("bad bech32 checksum")
+    data = data[:-6]
+    chk = _polymod(_hrp_values("bcrt") + data + [0] * 6) ^ const
+    return "bcrt1" + "".join(_BECH32[d] for d in data + [(chk >> 5 * (5 - i)) & 31 for i in range(6)])
+
+
+
+MESSAGE_MAX = 512  # signer.wasm's limit, in bytes
+
+
+
+def _message_key(derivation_path: str, network: str) -> tuple:
+    """(purpose, account, chain, index) for m/49h or m/84h single sig addresses."""
+    parts = derivation_path.replace("'", "h").split("/")
+    if len(parts) == 6 and parts[4] in ("0", "1") and parts[5].isdigit():
+        purpose, account = standard_account("/".join(parts[:4]), network)
+        if purpose in (49, 84):
+            return purpose, account, int(parts[4]), int(parts[5])
+    raise UnsupportedDerivation(f"signer.wasm signs messages only for m/49h and m/84h addresses, not {derivation_path}")
+
+
+
+def message_address(seed, derivation_path: str, network: str, message: bytes) -> str:
+    address = bitwasm.use(seed, network).message_review(message, *_message_key(derivation_path, network))["address"]
+    return for_network(address, network)
+
+
+
+def sign_message(seed, derivation_path: str, network: str, message: bytes) -> str:
+    """Base64, with the header SeedSigner always gave: 31-34, a compressed key whatever the script."""
+    S = bitwasm.use(seed, network)
+    S.message_review(message, *_message_key(derivation_path, network))
+    sig = S.message_sign()
+    # signer.wasm writes BIP137's header for the script; the recovery id is its low two bits
+    sig = bytes([31 + ((sig[0] - 27) & 3)]) + sig[1:]
+    return b2a_base64(sig).strip().decode()
