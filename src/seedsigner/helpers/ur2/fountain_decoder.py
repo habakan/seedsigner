@@ -219,23 +219,19 @@ class FountainDecoder:
 
         # If we've received all the parts
         if self.received_part_indexes == self.expected_part_indexes:
-            # Reassemble the message from its fragments
-            sorted_parts = []
-            for value in self.simple_parts.values():
-                sorted_parts.append(value)
-
-            sorted_parts.sort(key=lambda a: a.index())
-
-            fragments = []
-            for part in sorted_parts:
-                fragments.append(part.data)
-
-            message = self.join_fragments(fragments, self.expected_message_len)
+            # Reassemble the message from its fragments, in place, throwing away any padding
+            message = self.message_buf
+            fl = self.expected_fragment_len
+            for part in self.simple_parts.values():
+                at = part.index() * fl
+                n = min(fl, self.expected_message_len - at)
+                if n > 0:
+                    message[at:at + n] = part.data[:n]
 
             # Verify the message checksum and note success or failure
             checksum = crc32_int(message)
             if(checksum == self.expected_checksum):
-                self.result = bytes(message)
+                self.result = message
             else:
                 self.result = InvalidChecksum()
 
@@ -278,6 +274,9 @@ class FountainDecoder:
             self.expected_message_len = p.message_len
             self.expected_checksum = p.checksum
             self.expected_fragment_len = len(p.data)
+            # The message's room, taken now: by the last part a MicroPython heap may be too
+            # fragmented to find it whole
+            self.message_buf = bytearray(p.message_len)
         else:
             # If this part's values don't match the first part's values, throw away the part
             if self.expected_part_count() != p.seq_len:

@@ -50,9 +50,13 @@ def join_lists(lists):
     return sum(lists, [])
 
 def join_bytes(list_of_ba):
-    out = bytearray()
+    # One allocation of the final size: growing it piece by piece needs the old and new copies at
+    # once, which a fragmented MicroPython heap may not have room for
+    out = bytearray(sum(len(ba) for ba in list_of_ba))
+    at = 0
     for ba in list_of_ba:
-        out.extend(ba)
+        out[at:at + len(ba)] = ba
+        at += len(ba)
     return out
 
 def xor_into(target, source):

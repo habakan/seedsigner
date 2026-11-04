@@ -84,3 +84,38 @@ def compare_with_wasm_parser(monkeypatch):
 def pytest_terminal_summary(terminalreporter):
     terminalreporter.write_line(f"WasmPSBTParser agreed with PSBTParser on {WASM_PARSER_CHECKS['compared']} parses "
                                 f"({WASM_PARSER_CHECKS['change_skipped']} without comparing unregistered multisig change)")
+
+
+# SEEDSIGNER_RECORD_QR=<file>: every DecodeQR session in the suite (its add_data calls) is written there,
+# for pico/tests/qr_replay.py to decode again on MicroPython and compare with CPython
+QR_SESSIONS = []
+
+
+@pytest.fixture(autouse=True)
+def record_qr_sessions(monkeypatch):
+    import os
+    if not os.environ.get("SEEDSIGNER_RECORD_QR"):
+        return
+    from binascii import b2a_base64
+    from seedsigner.models.decode_qr import DecodeQR
+    add_data = DecodeQR.add_data
+
+    def recorded(self, data):
+        if not hasattr(self, "_recorded"):
+            self._recorded = {"lang": self.wordlist_language_code, "data": []}
+            QR_SESSIONS.append(self._recorded)
+        if data is not None:
+            raw = bytes(data) if isinstance(data, (bytes, bytearray)) else None
+            self._recorded["data"].append(["b", b2a_base64(raw).decode().strip()] if raw is not None else ["s", data])
+        return add_data(self, data)
+
+    monkeypatch.setattr(DecodeQR, "add_data", recorded)
+
+
+def pytest_sessionfinish(session):
+    import json, os
+    path = os.environ.get("SEEDSIGNER_RECORD_QR")
+    if path:
+        unique = {json.dumps(s, sort_keys=True) for s in QR_SESSIONS if s["data"]}
+        with open(path, "w") as f:  # one session a line, so the Pico can read them one at a time
+            f.write("".join(s + "\n" for s in sorted(unique)))

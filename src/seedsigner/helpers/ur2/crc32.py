@@ -5,31 +5,17 @@
 # Licensed under the "BSD-2-Clause Plus Patent License"
 #
 
+import binascii
+
 from .constants import MAX_UINT32
 
 def bit_length(n):
     return len(bin(abs(n))) - 2
 
-TABLE = None
-
 def crc32(buf):
-    # Lazily instantiate CRC table
-    global TABLE
-    if TABLE == None:
-        TABLE = [None] * (256 * 4)
-
-        for i in range(256):
-            c = i
-            for j in range(8):
-                c = (c >> 1) if (c % 2 == 0) else (0xEDB88320 ^ (c >> 1))
-
-            TABLE[i] = c
-
-    crc = MAX_UINT32 & ~0
-    for byte in buf:
-        crc = (crc >> 8) ^ TABLE[(crc ^ byte) & 0xFF]
-
-    return MAX_UINT32 & ~crc
+    # binascii's C CRC-32 (IEEE, as the table this replaced): in Python, every step past 2**30
+    # was a heap object on MicroPython, and a frame's worth of them left the heap in pieces
+    return MAX_UINT32 & binascii.crc32(buf)
 
 def crc32n(buf):
     n = crc32(buf)

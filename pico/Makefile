@@ -2,6 +2,8 @@
 #   make unix BITWASM_SIGNER=<bitwasm-signer checkout>   MicroPython's unix port, for the heap and the tests
 BITWASM_SIGNER ?=
 MPY_DIR := ../build/micropython
+# urtypes as requirements.txt pins it, from the venv the tests use
+URTYPES ?= $(shell ../.venv/bin/python -c "import os, urtypes; print(os.path.dirname(urtypes.__file__))")
 WAMR_ROOT ?= $(BITWASM_SIGNER)/third_party/wasm-micro-runtime
 OUT := ../build/pico
 BS = $(BITWASM_SIGNER)
@@ -29,10 +31,11 @@ unix: $(OUT)/unix/libsigner.a
 # st7789_mpy.py, the Pi's viper-emitter display driver, is not the Pico's
 py:
 	rm -rf $(OUT)/py
-	python3 tools/to_micropython.py $(OUT)/py ../src/seedsigner ../src/bitwasm_signer
+	python3 tools/to_micropython.py $(OUT)/py ../src/seedsigner ../src/bitwasm_signer $(URTYPES)
 	cp -R lib/. $(OUT)/py/
-	cp $(MPY_DIR)/lib/micropython-lib/python-stdlib/logging/logging.py \
-	  $(MPY_DIR)/lib/micropython-lib/python-stdlib/hmac/hmac.py $(OUT)/py/
+	cp $(MPY_DIR)/lib/micropython-lib/python-stdlib/hmac/hmac.py \
+	  $(MPY_DIR)/lib/micropython-lib/python-stdlib/base64/base64.py \
+	  $(MPY_DIR)/lib/micropython-lib/python-stdlib/zlib/zlib.py $(OUT)/py/
 	cp $(MPY_DIR)/lib/micropython-lib/python-stdlib/os-path/os/path.py $(OUT)/py/os/
 	rm $(OUT)/py/seedsigner/hardware/displays/st7789_mpy.py
 	python3 -c "import sys; print('PARSER = ' + repr(open(sys.argv[1], 'rb').read()))" \

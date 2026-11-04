@@ -89,6 +89,29 @@ Two differences, both from the signer checking each output itself:
 
 The signed PSBT is what `parser_finalize` writes, untrimmed: the Pico has no embit to trim it with.
 
+## Reading QR codes
+
+`models/decode_qr.py` runs on the device for everything but the camera image (pyzbar, still the Pi's).
+`SEEDSIGNER_RECORD_QR=<file> pytest` writes every DecodeQR session in the suite, 184 of them, and
+`pico/tests/qr_replay.py` decodes them again: the Pico 2 prints what MicroPython's unix port does, and
+both print what CPython does except one generic wallet descriptor, which needs embit to validate.
+
+What MicroPython needed:
+
+- `helpers/qr_text.py` for decode_qr's regular expressions, since MicroPython's `re` has no flags and no
+  `{m,n}`; `tests/test_qr_text.py` checks each against `re` on generated strings.
+- Double floats in the firmware (`pico/modules/micropython.cmake`). BC-UR picks mixed fragments with a
+  double-precision sampler, so single precision cannot decode a UR that needs them.
+- Fewer large allocations late. The heap fragments as UR frames arrive: after 29 frames 88 KB is used and
+  the largest free block is under 9 KB. The fountain decoder now takes the message's room with the
+  first frame and fills it in place, and UR's CRC-32 is binascii's, not a table walked with integers
+  that are heap objects past 2**30 on a 32-bit MicroPython.
+- No list of 2048 four-letter prefixes per QR (`qr_text.four_letter_word`), `UnicodeError` for
+  `UnicodeDecodeError`, `zlib.decompress` for `decompressobj`, and a `logging` that takes `exc_info`.
+
+Fragmentation is the device's open risk: a 32 KB PSBT will want its buffer taken early, as the UR
+message's now is.
+
 ## What the Pico build gives up
 
 Whatever `signer.wasm` does not do: Electrum seeds, non-English wordlists, legacy P2PKH, custom

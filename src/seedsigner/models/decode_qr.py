@@ -1,7 +1,6 @@
 import base64
 import json
 import logging
-import re
 import zlib
 
 from binascii import a2b_base64, b2a_base64
@@ -10,13 +9,12 @@ try:
     from embit import psbt
 except ImportError:
     psbt = None  # the Pico build: PSBTs stay bytes, read by parser.wasm
-from pyzbar import pyzbar
-from pyzbar.pyzbar import ZBarSymbol
 from urtypes.crypto import PSBT as UR_PSBT
 from urtypes.crypto import Account, Output
 from urtypes.bytes import Bytes
 from base64 import b32encode, b32decode
 
+from seedsigner.helpers import qr_text
 from seedsigner.helpers.ur2.ur_decoder import URDecoder
 from seedsigner.models.qr_type import QRType
 from seedsigner.models.seed import Seed
@@ -324,6 +322,8 @@ class DecodeQR:
         if image is None:
             return None
 
+        from pyzbar import pyzbar  # the Pi's camera path; the Pico reads QR codes natively
+        from pyzbar.pyzbar import ZBarSymbol
         barcodes = pyzbar.decode(image, symbols=[ZBarSymbol.QRCODE], binary=is_binary)
 
         # if barcodes:
@@ -350,34 +350,34 @@ class DecodeQR:
             logger.debug(f"segment string length: {len(s)}")
 
             # PSBT
-            if re.search("^UR:CRYPTO-PSBT/", s, re.IGNORECASE):
+            if s.upper().startswith("UR:CRYPTO-PSBT/"):
                 return QRType.PSBT__UR2
 
-            elif re.search("^UR:CRYPTO-OUTPUT/", s, re.IGNORECASE):
+            elif s.upper().startswith("UR:CRYPTO-OUTPUT/"):
                 return QRType.OUTPUT__UR
 
-            elif re.search("^UR:CRYPTO-ACCOUNT/", s, re.IGNORECASE):
+            elif s.upper().startswith("UR:CRYPTO-ACCOUNT/"):
                 return QRType.ACCOUNT__UR
 
-            elif re.search(r'^p(\d+)of(\d+) ([A-Za-z0-9+\/=]+$)', s, re.IGNORECASE): #must be base64 characters only in segment
+            elif qr_text.is_specter_psbt_part(s): #must be base64 characters only in segment
                 return QRType.PSBT__SPECTER
 
-            elif re.search("^UR:BYTES/", s, re.IGNORECASE):
+            elif s.upper().startswith("UR:BYTES/"):
                 return QRType.BYTES__UR
 
             elif DecodeQR.is_base64_psbt(s):
                 return QRType.PSBT__BASE64
 
-            elif re.search(r"^B\$[2HZ]P[0-9A-Z]{4}", s): # https://github.com/coinkite/BBQr/blob/master/BBQr.md#spliting-the-data
+            elif qr_text.is_bbqr(s): # https://github.com/coinkite/BBQr/blob/master/BBQr.md#spliting-the-data
                 return QRType.PSBT__BBQR
 
             # Wallet Descriptor
             desc_str = s.replace("\n","").replace(" ","")
-            if re.search(r'^p(\d+)of(\d+) ', s, re.IGNORECASE):
+            if qr_text.part_header(s):
                 # when not a SPECTER Base64 PSBT from above, assume it's json
                 return QRType.WALLET__SPECTER
 
-            elif re.search(r'^\{\"label\".*\"descriptor\"\:.*', desc_str, re.IGNORECASE):
+            elif qr_text.is_specter_wallet_json(desc_str):
                 # if json starting with label and contains descriptor, assume specter wallet json
                 return QRType.WALLET__SPECTER
 
@@ -388,7 +388,7 @@ class DecodeQR:
                 return QRType.WALLET__GENERIC
 
             # Seed
-            if re.search(r'\d{48,96}', s):
+            if qr_text.has_digit_run(s):
                 return QRType.SEED__SEEDQR
 
             # Bitcoin Address
@@ -404,25 +404,20 @@ class DecodeQR:
                 return QRType.SETTINGS
 
             # Seed
-            # create 4 letter wordlist only if not PSBT (performance gain)
             wordlist = Seed.get_wordlist(wordlist_language_code)
-            try:
-                _4LETTER_WORDLIST = [word[:4].strip() for word in wordlist]
-            except:
-                _4LETTER_WORDLIST = []
 
             if all(x in wordlist for x in s.strip().split(" ")):
                 # checks if all words in list are in BIP-39 word list
                 return QRType.SEED__MNEMONIC
 
-            elif all(x in _4LETTER_WORDLIST for x in s.strip().split(" ")):
+            elif all(qr_text.four_letter_word(wordlist, x) for x in s.strip().split(" ")):
                 # checks if all 4 letter words are in list are in 4 letter BIP-39 word list
                 return QRType.SEED__FOUR_LETTER_MNEMONIC
 
             elif DecodeQR.is_base43_psbt(s):
                 return QRType.PSBT__BASE43
 
-        except UnicodeDecodeError:
+        except UnicodeError:  # UnicodeDecodeError is one; MicroPython raises UnicodeError itself
             # Probably this isn't meant to be string data; check if it's valid byte data
             # below.
             pass
@@ -441,7 +436,7 @@ class DecodeQR:
             try:
                 bitstream = ""
                 for b in s:
-                    bitstream += bin(b).lstrip('0b').zfill(8)
+                    bitstream += "{:08b}".format(b)  # MicroPython's str has no zfill
                 # print(bitstream)
 
                 return QRType.SEED__COMPACTSEEDQR
@@ -521,12 +516,7 @@ class DecodeQR:
 
     @staticmethod
     def is_bitcoin_address(s):
-        if re.search(r'^bitcoin\:.*', s, re.IGNORECASE):
-            return True
-        elif re.search(r'^((bc1|tb1|bcr|[123]|[mn])[a-zA-HJ-NP-Z0-9]{25,62})$', s, re.IGNORECASE):
-            return True
-        else:
-            return False
+        return qr_text.is_address(s)
 
 
     @staticmethod
@@ -574,9 +564,7 @@ class DecodeQR:
         
             if label == 'policy':
                 try:
-                    match = re.search(r'(\d+)\D*(\d+)', value)
-                    m = int(match.group(1))
-                    n = int(match.group(2))
+                    m, n = qr_text.two_numbers(value)
                 except:
                     raise Exception(f"Policy line not supported")
             elif label == 'derivation':
@@ -714,13 +702,13 @@ class SpecterPsbtQrDecoder(BaseAnimatedQrDecoder):
 
 
     def current_segment_num(self, segment) -> int:
-        if re.search(r'^p(\d+)of(\d+) ', segment, re.IGNORECASE) != None:
-            return int(re.search(r'^p(\d+)of(\d+) ', segment, re.IGNORECASE).group(1))
+        if qr_text.part_header(segment) != None:
+            return qr_text.part_header(segment)[0]
 
 
     def total_segment_nums(self, segment) -> int:
-        if re.search(r'^p(\d+)of(\d+) ', segment, re.IGNORECASE) != None:
-            return int(re.search(r'^p(\d+)of(\d+) ', segment, re.IGNORECASE).group(2))
+        if qr_text.part_header(segment) != None:
+            return qr_text.part_header(segment)[1]
 
 
     def parse_segment(self, segment) -> str:
@@ -752,9 +740,7 @@ class BBQRPsbtQrDecoder(BaseAnimatedQrDecoder):
 
             if self.encoding == 'Z':
                 # decompress
-                z = zlib.decompressobj(wbits=-10)
-                rv = z.decompress(rv)
-                rv += z.flush()
+                rv = zlib.decompress(rv, -10)  # one complete stream; MicroPython's zlib has no decompressobj
 
             return rv
 
@@ -900,9 +886,10 @@ class SeedQrDecoder(BaseSingleFrameQrDecoder):
                 seed_phrase_list = segment.strip().split(" ")
                 words = []
                 for s in seed_phrase_list:
-                    # TODO: Pre-calculate this once on startup
-                    _4LETTER_WORDLIST = [word[:4].strip() for word in self.wordlist]
-                    words.append(self.wordlist[_4LETTER_WORDLIST.index(s)])
+                    word = qr_text.four_letter_word(self.wordlist, s)
+                    if word is None:
+                        raise ValueError(f"{s!r} begins no word")  # as list.index() did
+                    words.append(word)
 
                 # embit mnemonic code to validate
                 seed = Seed(words, passphrase="", wordlist_language_code=self.wordlist_language_code)
@@ -1021,15 +1008,15 @@ class BitcoinAddressQrDecoder(BaseSingleFrameQrDecoder):
                 * group 1: complete address
                 * group 2: address prefix
         """
-        address_match = re.search(r'^((bc1q|tb1q|bcrt1q|bc1p|tb1p|bcrt1p|[123]|[mn])[a-zA-HJ-NP-Z0-9]{25,64})', segment.split(":")[-1], re.IGNORECASE)
+        address_match = qr_text.match_address(segment.split(":")[-1])
         if address_match != None:
-            self.address = address_match.group(1)
+            self.address = address_match[0]
             self.complete = True
             self.collected_segments = 1
             
             # Have to handle wallets that uppercase bech32 addresses.
             # Note that it's safe to lowercase the prefix for ALL addr formats.
-            addr_prefix = address_match.group(2).lower()
+            addr_prefix = address_match[1].lower()
             
             if addr_prefix == "1":
                 # Legacy P2PKH. mainnet
@@ -1103,7 +1090,7 @@ class SpecterWalletQrDecoder(BaseAnimatedQrDecoder):
         try:
             j = "".join(self.segments)
             json.loads(j)
-        except json.decoder.JSONDecodeError:
+        except ValueError:  # json.JSONDecodeError is one; MicroPython's json has no decoder module
             return False
         return True
 
@@ -1131,24 +1118,24 @@ class SpecterWalletQrDecoder(BaseAnimatedQrDecoder):
 
 
     def current_segment_num(self, segment) -> int:
-        if re.search(r'^p(\d+)of(\d+) ', segment, re.IGNORECASE) != None:
-            return int(re.search(r'^p(\d+)of(\d+) ', segment, re.IGNORECASE).group(1))
+        if qr_text.part_header(segment) != None:
+            return qr_text.part_header(segment)[0]
         else:
             return 1
 
 
     def total_segment_nums(self, segment) -> int:
-        if re.search(r'^p(\d+)of(\d+) ', segment, re.IGNORECASE) != None:
-            return int(re.search(r'^p(\d+)of(\d+) ', segment, re.IGNORECASE).group(2))
+        if qr_text.part_header(segment) != None:
+            return qr_text.part_header(segment)[1]
         else:
             return 1
 
 
     def parse_segment(self, segment) -> str:
-        try:
-            return re.search(r'^p(\d+)of(\d+) (.+$)', segment, re.IGNORECASE).group(3)
-        except:
-            return segment
+        # r'^p(\d+)of(\d+) (.+$)': a rest of one line, or the segment as it is
+        h = qr_text.part_header(segment)
+        rest = h[2][:-1] if h and h[2].endswith("\n") else (h[2] if h else "")
+        return rest if rest and "\n" not in rest else segment
 
 
 
@@ -1159,9 +1146,9 @@ class GenericWalletQrDecoder(BaseSingleFrameQrDecoder):
 
 
     def add(self, segment, qr_type=QRType.WALLET__GENERIC):
-        from embit.descriptor import Descriptor
         try:
-            # Validate via embit
+            # Validate via embit; without it (the Pico) descriptors are not read yet
+            from embit.descriptor import Descriptor
             Descriptor.from_string(segment)
             self.descriptor = segment
             self.complete = True
