@@ -23,7 +23,8 @@ unix: $(OUT)/unix/libsigner.a
 	  BITWASM_SIGNER_LIB=$(abspath $(OUT)/unix/libsigner.a)
 .PHONY: unix
 
-# SeedSigner's Python as MicroPython runs it: dataclasses expanded, then pico/lib over the result
+# SeedSigner's Python as MicroPython runs it: dataclasses expanded, then pico/lib over the result.
+# st7789_mpy.py, the Pi's viper-emitter display driver, is not the Pico's
 py:
 	rm -rf $(OUT)/py
 	python3 tools/to_micropython.py $(OUT)/py ../src/seedsigner ../src/bitwasm_signer
@@ -31,23 +32,29 @@ py:
 	cp $(MPY_DIR)/lib/micropython-lib/python-stdlib/logging/logging.py \
 	  $(MPY_DIR)/lib/micropython-lib/python-stdlib/hmac/hmac.py $(OUT)/py/
 	cp $(MPY_DIR)/lib/micropython-lib/python-stdlib/os-path/os/path.py $(OUT)/py/os/
+	rm $(OUT)/py/seedsigner/hardware/displays/st7789_mpy.py
 .PHONY: py
 
-# Every module as MicroPython bytecode, which also proves it parses. st7789_mpy.py is the Pi's
-# viper-emitter driver; the Pico has its own display code
+# Every module as MicroPython bytecode, which also proves it parses
 mpy: py
 	rm -rf $(OUT)/mpy
-	cd $(OUT)/py && find . -name '*.py' ! -name st7789_mpy.py | while read f; do \
+	cd $(OUT)/py && find . -name '*.py' | while read f; do \
 	  mkdir -p ../mpy/$$(dirname $$f) && $(abspath $(MPY_DIR))/mpy-cross/build/mpy-cross -o ../mpy/$${f%.py}.mpy $$f || exit 1; done
 .PHONY: mpy
 
 # MicroPython for the Pico 2's RISC-V cores with the native signer. PICO_TOOLCHAIN_PATH is a RISC-V GCC,
 # such as bitwasm-signer-pico's third_party/riscv-toolchain
-rp2:
+rp2: py
 	@test -n "$(BITWASM_SIGNER)" || { echo "set BITWASM_SIGNER to a bitwasm-signer checkout at the pinned commit"; exit 1; }
 	BITWASM_SIGNER=$(abspath $(BITWASM_SIGNER)) $(MAKE) -C $(MPY_DIR)/ports/rp2 -j8 BOARD=RPI_PICO2 BOARD_VARIANT=RISCV \
-	  USER_C_MODULES=$(abspath modules/micropython.cmake)
+	  USER_C_MODULES=$(abspath modules/micropython.cmake) FROZEN_MANIFEST=$(abspath manifest.py)
 .PHONY: rp2
+
+# The one file the device's filesystem needs: everything else is frozen into the firmware
+device-install:
+	echo "import selftest" > $(OUT)/main.py
+	mpremote connect $(PORT) cp $(OUT)/main.py :main.py
+.PHONY: device-install
 
 # Run a script on the device with the modules mounted from the host: make device-smoke PORT=/dev/cu.usbmodem...
 device-%:

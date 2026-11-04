@@ -60,9 +60,14 @@ mainnet and regtest addresses, a BIP137 message signature, a BIP85 child, dice a
 | BIP137 message signature | 81 ms |
 | heap after importing and using them | 67 KB, 321 KB free |
 
+Frozen into the firmware (`pico/manifest.py`), the device boots on its own: a one-line `main.py`
+runs `selftest`, which loads BIP39's test seed and checks its fingerprint and two addresses. At boot
+the imports take 61 ms, the seed 0.54 s, and 374 KB of heap is left.
+
 ```sh
 make -C pico rp2 BITWASM_SIGNER=<bitwasm-signer> PICO_TOOLCHAIN_PATH=<RISC-V GCC>   # then flash firmware.elf
-make -C pico mpy && make -C pico device-smoke PORT=/dev/cu.usbmodem...
+make -C pico device-install PORT=/dev/cu.usbmodem...    # main.py, once
+make -C pico mpy && make -C pico device-smoke PORT=...  # or run a script with the modules mounted
 ```
 
 ## What the Pico build gives up
