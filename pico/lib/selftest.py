@@ -5,6 +5,12 @@ t0 = time.ticks_ms()
 from seedsigner.models.seed import Seed
 from seedsigner.models.settings import SettingsConstants as SC
 from seedsigner.helpers import wallet
+from seedsigner.helpers.bitwasm import BitwasmReview
+import binascii, hashlib
+
+# bitwasm-signer's own_mixed_nwu vector and the hash of what CPython's SeedSigner signs it into
+PSBT = "cHNidP8BAMUCAAAAAi3cJLA5qNmU6PAXQFY7QkDphmQ2iS3DXR4GlOZQu2gMAAAAAAD9////RXe+3a5meMIh5QyFFTp/Cs3laOFUFY+TuBbIwtGcj28BAAAAAP3///8DoIYBAAAAAAAWABSlpznvac+MBo6URWMiZxE52rh26iBOAAAAAAAAFgAUmEQgSFlZ0Noj5/6QK/MVgUzHtktovwAAAAAAACJRIIgtdOXQVy1agWzvAEGpa2wd6DL2+WdtlgXETV6al9PcAAAAAAABAFICAAAAATAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwAAAAAAD/////AaCGAQAAAAAAFgAUwM681sPTyox13F7GLr5VMw75EOIAAAAAAQEfoIYBAAAAAAAWABTAzrzWw9PKjHXcXsYuvlUzDvkQ4iIGAzDVT9DdQgpuX402JPXzSCyuNQ951fB1O/W+75wtka88GHPF2gpUAACAAAAAgAAAAIAAAAAAAAAAAAABAH0CAAAAATExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExAAAAAAD/////AugDAAAAAAAAFgAUMTExMTExMTExMTExMTExMTExMTFwEQEAAAAAACJRIKYIafDbzx3GWcnOy6+AUBNeqejNxIcFPx3GiAlJ3GhMAAAAAAEBK3ARAQAAAAAAIlEgpghp8NvPHcZZyc7Lr4BQE16p6M3EhwU/HcaICUncaEwhFsyKS8ZNiXvdxfvC9nD3qLoLOGd5EGzxIjxvxdfNb8EVGQBzxdoKVgAAgAAAAIAAAACAAAAAAAAAAAAAACICAoSuDvvlyzWyQDbUjUnTxVqE+nVVK9Fi/DoqVeKZfdRZGHPF2gpUAACAAAAAgAAAAIAAAAAABQAAAAAhBzmfGy9Dk/KaGMk3hZxd2KdzUBAxV+uIDwLowIIUJ3zvGQBzxdoKVgAAgAAAAIAAAACAAQAAAAAAAAAA"
+SIGNED_SHA256 = "5476c3bb9447d5689cc360fcb9603fac4471b12c6bb14551238924b5dce3eb2c"
 
 WANT = {
     "fingerprint": "73c5da0a",
@@ -27,10 +33,16 @@ def run():
         "address": wallet.address(seed, "m/84h/0h/0h", SC.MAINNET, False, 0),
         "taproot change": wallet.address(seed, "m/86h/0h/0h", SC.MAINNET, True, 0),
     }
+    t = time.ticks_ms()
+    review = BitwasmReview(binascii.a2b_base64(PSBT), seed, SC.MAINNET)
+    signed = hashlib.sha256(review.sign()).digest()
+    psbt_ms = time.ticks_diff(time.ticks_ms(), t)
     bad = [k for k in WANT if got[k] != WANT[k]]
+    if binascii.hexlify(signed).decode() != SIGNED_SHA256:
+        bad.append("psbt")
     gc.collect()
-    LAST = "selftest %s import ms %d seed ms %d free KB %d" % (
-        "FAIL " + ", ".join(bad) if bad else "ok", IMPORT_MS, ms, gc.mem_free() // 1024)
+    LAST = "selftest %s import ms %d seed ms %d psbt ms %d free KB %d" % (
+        "FAIL " + ", ".join(bad) if bad else "ok", IMPORT_MS, ms, psbt_ms, gc.mem_free() // 1024)
     print(LAST)
     return not bad
 

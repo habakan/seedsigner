@@ -61,8 +61,11 @@ mainnet and regtest addresses, a BIP137 message signature, a BIP85 child, dice a
 | heap after importing and using them | 67 KB, 321 KB free |
 
 Frozen into the firmware (`pico/manifest.py`), the device boots on its own: a one-line `main.py`
-runs `selftest`, which loads BIP39's test seed and checks its fingerprint and two addresses. At boot
-the imports take 61 ms, the seed 0.54 s, and 374 KB of heap is left.
+runs `selftest`, which loads BIP39's test seed, checks its fingerprint and two addresses, and reviews
+and signs bitwasm-signer's `own_mixed_nwu` PSBT through SeedSigner's `BitwasmReview`: `parser.wasm` on
+WAMR (`pico/modules/wamr`), then the native signer. The signed PSBT is the bytes CPython's SeedSigner
+produces. At boot the imports take 63 ms, the seed 0.55 s, the PSBT 0.60 s, and 197 KB of heap is left.
+WAMR's 160 KB pool peaks at 157 KB on that PSBT, so larger ones or UR assembly may need more.
 
 ```sh
 make -C pico rp2 BITWASM_SIGNER=<bitwasm-signer> PICO_TOOLCHAIN_PATH=<RISC-V GCC>   # then flash firmware.elf
