@@ -25,6 +25,27 @@ Each stage ends with a measurement that decides whether the next one is worth do
    reader and the buttons; SeedSigner frozen into Flash.
 4. **On hardware.** Load a seed, review and sign a PSBT on signet.
 
+## Measured on the Pico 2
+
+`signer.wasm` (bitwasm-signer d4b970a) on WAMR 2.4.5's classic interpreter, RP2350 RISC-V at 150MHz,
+BIP39's test seed, testnet. `tools/pico/signer_bench` builds it against bitwasm-signer-pico's SDK and
+WAMR; results are read from RAM over SWD.
+
+| | |
+|---|---:|
+| load / instantiate | 0.11 s / 0.001 s |
+| seed from mnemonic (PBKDF2) | **21.9 s** (native, in bitwasm-signer-pico: 0.47 s) |
+| account xpub | 1.4 s |
+| one address, P2WPKH / P2TR | 2.1 s / 3.7 s |
+| `find_address`, 2 x 20 children | 30.2 s |
+| RAM: WAMR pool peak + writable module copy | 148 KB + 102 KB |
+
+Interpreted, the signer is too slow to use (an address page of ten takes 21 s) and its 250 KB leaves
+too little for MicroPython beside `parser.wasm`. bitwasm-signer-pico reached the same conclusion and
+runs the signer's C natively, keeping only the parser, which reads untrusted input, in WAMR. The Pico
+build will do the same: the same C as `signer.wasm`, linked natively behind the same `signer_*`
+functions, so the Python side does not change.
+
 ## What the Pico build gives up
 
 Whatever `signer.wasm` does not do: Electrum seeds, non-English wordlists, legacy P2PKH, custom
