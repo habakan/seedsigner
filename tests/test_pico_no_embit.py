@@ -5,6 +5,7 @@ import sys
 NO_EMBIT = [
     "seedsigner.helpers.bitwasm",
     "seedsigner.helpers.mnemonic_generation",
+    "seedsigner.helpers.wallet",
     "seedsigner.models.seed",
 ]
 

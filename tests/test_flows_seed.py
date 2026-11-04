@@ -226,6 +226,9 @@ class TestSeedFlows(FlowTest):
                     # skip multisig taproot
                     elif sig_tuple[0] == SettingsConstants.MULTISIG and script_tuple[0] == SettingsConstants.TAPROOT:
                         continue
+                    # skip what signer.wasm does not derive: legacy, and multisig other than P2WSH
+                    elif script_tuple[0] == SettingsConstants.LEGACY_P2PKH or (sig_tuple[0] == SettingsConstants.MULTISIG and script_tuple[0] != SettingsConstants.NATIVE_SEGWIT):
+                        continue
                     else:
                         print('\n\ntest_standard_xpubs(%s, %s, %s)' % (sig_tuple, script_tuple, xpub_qr_tuple))
                         flowtest_standard_xpub(sig_tuple, script_tuple, xpub_qr_tuple)
@@ -346,7 +349,8 @@ class TestSeedFlows(FlowTest):
         # exclusively set only one choice for each of sig_types, script_types and xpub_qr_formats
         self.settings.update({
             SettingsConstants.SETTING__SIG_TYPES: SettingsConstants.MULTISIG,
-            SettingsConstants.SETTING__SCRIPT_TYPES: SettingsConstants.NESTED_SEGWIT,
+            # signer.wasm derives no nested multisig
+            SettingsConstants.SETTING__SCRIPT_TYPES: SettingsConstants.NATIVE_SEGWIT,
             SettingsConstants.SETTING__XPUB_QR_FORMAT: SettingsConstants.XPUB_QR_FORMAT__UR_CRYPTO_ACCOUNT,
         })
 

@@ -1,13 +1,9 @@
 import math
 
-from embit import bip32
-from embit.networks import NETWORKS
-from binascii import hexlify
 from dataclasses import dataclass
 from typing import List
-from embit import bip32
-from embit.networks import NETWORKS
 from embit.psbt import PSBT
+from seedsigner.helpers import wallet
 from seedsigner.helpers.ur2.ur_encoder import UREncoder
 from seedsigner.helpers.ur2.ur import UR
 from seedsigner.helpers.qr import QR
@@ -156,16 +152,13 @@ class BaseXpubQrEncoder(BaseQrEncoder):
     sig_type : str = None
 
     def prep_xpub(self):
-            
-        version = self.seed.detect_version(self.derivation, self.network, self.sig_type)
-        self.root = bip32.HDKey.from_seed(self.seed.seed_bytes, version=NETWORKS[SettingsConstants.map_network_to_embit(self.network)]["xprv"])
-        self.fingerprint = self.root.child(0).fingerprint
-        self.xprv = self.root.derive(self.derivation)
-        self.xpub = self.xprv.to_public()
-        self.xpub_base58 = self.xpub.to_string(version=version)
+        x = wallet.account_xpub(self.seed, self.derivation, self.network, self.sig_type)
+        self.fingerprint = bytes.fromhex(x["fingerprint"])
+        self.xpub_raw = x["raw"]
+        self.xpub_base58 = x["xpub"]
 
         self.xpubstring = "[{}{}]{}".format(
-            hexlify(self.fingerprint).decode('utf-8'),
+            x["fingerprint"],
             self.derivation[1:],
             self.xpub_base58
         )
@@ -334,7 +327,7 @@ class UrXpubQrEncoder(BaseFountainQrEncoder, BaseXpubQrEncoder):
             if arr[0] == "m":
                 arr = arr[1:]
             if len(arr) == 0:
-                return Keypath([],self.root.my_fingerprint, None)
+                return Keypath([],self.fingerprint, None)
             if arr[-1] == "":
                 # trailing slash
                 arr = arr[:-1]
@@ -345,7 +338,7 @@ class UrXpubQrEncoder(BaseFountainQrEncoder, BaseXpubQrEncoder):
                 else:
                     arr[i] = PathComponent(int(e), False)
                     
-            return Keypath(arr, self.root.my_fingerprint, len(arr))
+            return Keypath(arr, self.fingerprint, len(arr))
             
         origin = derivation_to_keypath(self.derivation)
 
@@ -353,10 +346,11 @@ class UrXpubQrEncoder(BaseFountainQrEncoder, BaseXpubQrEncoder):
         # so if working on TESTNET, Xpub can be exported accordingly. Default case, MAINNET: None value.
         self.use_info = None if self.network == SettingsConstants.MAINNET else CoinInfo(type=None, network=1)
         
-        self.ur_hdkey = HDKey({ 'key': self.xpub.key.serialize(),
-        'chain_code': self.xpub.chain_code,
+        # The BIP32 serialization: version, depth, parent fingerprint, child number, chain code, key
+        self.ur_hdkey = HDKey({ 'key': self.xpub_raw[45:78],
+        'chain_code': self.xpub_raw[13:45],
         'origin': origin,
-        'parent_fingerprint': self.xpub.fingerprint,
+        'parent_fingerprint': self.xpub_raw[5:9],
         'use_info': self.use_info })
 
         ur_outputs = []
@@ -388,7 +382,7 @@ class UrXpubQrEncoder(BaseFountainQrEncoder, BaseXpubQrEncoder):
             ur_outputs.append(Output([SCRIPT_EXPRESSION_TAG_MAP[403]],self.ur_hdkey))
             ur_outputs.append(Output([SCRIPT_EXPRESSION_TAG_MAP[400]],self.ur_hdkey))
         
-        ur_account = Account(self.root.my_fingerprint, ur_outputs)
+        ur_account = Account(self.fingerprint, ur_outputs)
 
         qr_ur_bytes = UR("crypto-account", ur_account.to_cbor())
 

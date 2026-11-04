@@ -5,7 +5,7 @@ import hmac
 
 from typing import List
 
-from seedsigner.helpers import bitwasm
+from seedsigner.helpers import bitwasm, wallet
 from seedsigner.models.settings import SettingsConstants
 
 logger = logging.getLogger(__name__)
@@ -146,11 +146,8 @@ class Seed:
         return None
 
 
-    def detect_version(self, derivation_path: str, network: str = SettingsConstants.MAINNET, sig_type: str = SettingsConstants.SINGLE_SIG) -> str:
-        from embit import bip32
-        from embit.networks import NETWORKS
-        embit_network = NETWORKS[SettingsConstants.map_network_to_embit(network)]
-        return bip32.detect_version(derivation_path, default="xpub", network=embit_network)
+    def detect_version(self, derivation_path: str, network: str = SettingsConstants.MAINNET, sig_type: str = SettingsConstants.SINGLE_SIG) -> bytes:
+        return wallet.version_bytes(wallet.version_name(derivation_path), network)
 
 
     @property
@@ -248,10 +245,8 @@ class ElectrumSeed(Seed):
         return "m/0h" if sig_type == SettingsConstants.SINGLE_SIG else "m/1h"
 
 
-    def detect_version(self, derivation_path: str, network: str = SettingsConstants.MAINNET, sig_type: str = SettingsConstants.SINGLE_SIG) -> str:
-        from embit.networks import NETWORKS
-        embit_network = NETWORKS[SettingsConstants.map_network_to_embit(network)]
-        return embit_network["zpub"] if sig_type == SettingsConstants.SINGLE_SIG else embit_network["Zpub"]
+    def detect_version(self, derivation_path: str, network: str = SettingsConstants.MAINNET, sig_type: str = SettingsConstants.SINGLE_SIG) -> bytes:
+        return wallet.version_bytes("zpub" if sig_type == SettingsConstants.SINGLE_SIG else "Zpub", network)
 
 
     @property

@@ -919,22 +919,10 @@ class SeedExportXpubDetailsView(View):
             self.loading_screen.start()
 
             try:
-                from embit.bip32 import HDKey
-                from embit.networks import NETWORKS
-                embit_network = NETWORKS[SettingsConstants.map_network_to_embit(self.settings.get_value(SettingsConstants.SETTING__NETWORK))]
-                version = self.seed.detect_version(
-                    derivation_path,
-                    self.settings.get_value(SettingsConstants.SETTING__NETWORK),
-                    self.sig_type
-                )
-                root = HDKey.from_seed(
-                    self.seed.seed_bytes,
-                    version=embit_network["xprv"]
-                )
-                fingerprint = hexlify(root.child(0).fingerprint).decode('utf-8')
-                xprv = root.derive(derivation_path)
-                xpub = xprv.to_public()
-                xpub_base58 = xpub.to_string(version=version)
+                from seedsigner.helpers import wallet
+                x = wallet.account_xpub(self.seed, derivation_path, self.settings.get_value(SettingsConstants.SETTING__NETWORK), self.sig_type)
+                fingerprint = x["fingerprint"]
+                xpub_base58 = x["xpub"]
 
             finally:
                 self.loading_screen.stop()

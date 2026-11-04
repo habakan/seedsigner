@@ -79,6 +79,10 @@ def test_ur_xpub_qr():
     assert e.next_part() == "UR:CRYPTO-ACCOUNT/4-4/LPAAAACSKPCYMOMNLGRYHDCKDYOTADLOCSDYYKADYKAEYKAOYKAOCYSSMECPONAXAAAYCYIOREKKJKAEAEAEWZWDMYON"    
 
 
+
+def test_ur_xpub_qr_testnet():
+    mnemonic = "obscure bone gas open exotic abuse virus bunker shuffle nasty ship dash"
+
     e = UrXpubQrEncoder(
         seed=Seed(mnemonic.split(), passphrase="pass"),
         network=SettingsConstants.TESTNET,
