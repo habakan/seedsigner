@@ -4,12 +4,10 @@ import os
 import time
 import traceback
 
-from embit.descriptor import Descriptor
-from embit.psbt import PSBT
 from PIL.Image import Image
 
 from seedsigner.gui.toast import BaseToastOverlayManagerThread
-from seedsigner.models.psbt_parser import PSBTParser
+from seedsigner.models.psbt import PSBTParser
 from seedsigner.models.seed import Seed
 from seedsigner.models.seed_storage import SeedStorage
 from seedsigner.models.settings import Settings
@@ -65,8 +63,11 @@ class BackgroundImportThread(BaseThread):
             import_module(module_name)
             # print(f"{time.time() - last:0.4f}: {module_name}")
 
-        time_import('embit')
-        time_import('seedsigner.helpers.embit_utils')
+        try:
+            time_import('embit')
+            time_import('seedsigner.helpers.embit_utils')
+        except ImportError:
+            pass  # the Pico build has no embit
 
         # Do costly initializations
         time_import('seedsigner.models.seed_storage')
@@ -109,14 +110,14 @@ class Controller(Singleton):
 
     # TODO: Refactor these flow-related attrs that survive across multiple Screens.
     # TODO: Should all in-memory flow-related attrs get wiped on MainMenuView?
-    psbt: PSBT = None
+    psbt: object = None  # embit's PSBT, or the bytes where there is no embit
     psbt_bytes: bytes = None
     psbt_seed: Seed = None
     psbt_parser: PSBTParser = None
 
     unverified_address = None
 
-    multisig_wallet_descriptor: Descriptor = None
+    multisig_wallet_descriptor: object = None  # embit's Descriptor
 
     image_entropy_preview_frames: list[Image] = None
     image_entropy_final_image: Image = None

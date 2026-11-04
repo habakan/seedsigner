@@ -2,13 +2,14 @@ import logging
 
 from gettext import gettext as _
 
-from seedsigner.models.psbt_parser import (PSBTBitwasmDisagreementError,
+from seedsigner.models.psbt import PSBTParser
+from seedsigner.models.psbt_errors import (PSBTBitwasmDisagreementError,
     PSBTBitwasmRefusedError, PSBTExtraneousInputScriptError,
     PSBTInputAmountVerificationError, PSBTInputOwnershipClaimError,
     PSBTInputScriptMismatchError, PSBTMalformedOpReturnError,
     PSBTMissingInputScriptError, PSBTMissingInputUtxoError,
     PSBTMixedDerivationPathTypesError, PSBTNegativeFeeError, PSBTOutputOwnershipClaimError,
-    PSBTOutputOwnershipContradictionError, PSBTParser, PSBTSeedCannotSignError,
+    PSBTOutputOwnershipContradictionError, PSBTSeedCannotSignError,
     PSBTSurplusDerivationPathsError)
 from seedsigner.models.settings import SettingsConstants
 from seedsigner.gui.components import FontAwesomeIconConstants, GUIConstants, SeedSignerIconConstants
@@ -427,7 +428,7 @@ class PSBTChangeDetailsView(View):
 
 
     def run(self):
-        from embit import bip32
+        from seedsigner.helpers.wallet import path_to_str
         from seedsigner.gui.screens.psbt_screens import PSBTChangeDetailsScreen
         psbt_parser: PSBTParser = self.controller.psbt_parser
 
@@ -501,7 +502,7 @@ class PSBTChangeDetailsView(View):
             amount=change_data.get("amount"),
             is_multisig=psbt_parser.is_multisig,
             fingerprint=seed_fingerprint,
-            derivation_path=bip32.path_to_str(verified_derivation_path),
+            derivation_path=path_to_str(verified_derivation_path),
             is_change_derivation_path=is_change_derivation_path,
             derivation_path_addr_index=derivation_path_addr_index,
             is_change_addr_verified=is_change_addr_verified,
@@ -961,11 +962,11 @@ class PSBTFinalizeView(View):
 
     
     def run(self):
-        from embit.psbt import PSBT
         from seedsigner.gui.screens.psbt_screens import PSBTFinalizeScreen
+        from seedsigner.models.psbt_wasm import WasmPSBTParser
 
         psbt_parser: PSBTParser = self.controller.psbt_parser
-        psbt: PSBT = self.controller.psbt
+        psbt = self.controller.psbt
 
         if not psbt_parser:
             # Should not be able to get here
@@ -979,8 +980,19 @@ class PSBTFinalizeView(View):
         if selected_menu_num == RET_CODE__BACK_BUTTON:
             return Destination(BackStackView)
 
+        elif isinstance(psbt_parser, WasmPSBTParser):
+            # No embit to trim with: the QR carries the PSBT as parser.wasm wrote it
+            from seedsigner.helpers.bitwasm import BitwasmError
+            try:
+                self.controller.psbt = psbt_parser.bitwasm_review.sign()
+            except BitwasmError as e:
+                logger.info(f"signer.wasm did not sign: {e}")
+                return Destination(PSBTSigningErrorView)
+            return Destination(PSBTSignedQRDisplayView)
+
         else:
             # Sign PSBT. Only signer.wasm signs; embit just trims what it wrote for the QR
+            from embit.psbt import PSBT
             from seedsigner.helpers.bitwasm import BitwasmError
             sig_cnt = PSBTParser.sig_count(psbt)
             try:

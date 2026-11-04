@@ -2,7 +2,6 @@ import math
 
 from dataclasses import dataclass
 from typing import List
-from embit.psbt import PSBT
 from seedsigner.helpers import wallet
 from seedsigner.helpers.ur2.ur_encoder import UREncoder
 from seedsigner.helpers.ur2.ur import UR
@@ -392,9 +391,10 @@ class UrXpubQrEncoder(BaseFountainQrEncoder, BaseXpubQrEncoder):
 
 @dataclass
 class UrPsbtQrEncoder(BaseFountainQrEncoder):
-    psbt: PSBT = None
+    psbt: object = None  # embit's PSBT, or its bytes
 
     def __post_init__(self):
         super().__post_init__()
-        qr_ur_bytes = UR("crypto-psbt", UR_PSBT(self.psbt.serialize()).to_cbor())
+        raw = self.psbt if isinstance(self.psbt, (bytes, bytearray)) else self.psbt.serialize()
+        qr_ur_bytes = UR("crypto-psbt", UR_PSBT(bytes(raw)).to_cbor())
         self.ur2_encode = UREncoder(ur=qr_ur_bytes, max_fragment_len=self.qr_max_fragment_size)

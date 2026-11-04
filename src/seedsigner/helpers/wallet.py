@@ -286,3 +286,9 @@ def address(seed, derivation_path: str, network: str, is_change: bool, index: in
     if purpose == 48:
         raise UnsupportedDerivation("signer.wasm lists single sig addresses only")
     return for_network(bitwasm.use(seed, network).address(purpose, account, int(is_change), index), network)
+
+
+
+def path_to_str(path: list) -> str:
+    """embit's bip32.path_to_str: m/84h/0h/0h/1/0."""
+    return "m" + "".join("/%d%s" % (i & 0x7FFFFFFF, "h" if i & 0x80000000 else "") for i in path)

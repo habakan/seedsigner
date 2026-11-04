@@ -73,6 +73,22 @@ make -C pico device-install PORT=/dev/cu.usbmodem...    # main.py, once
 make -C pico mpy && make -C pico device-smoke PORT=...  # or run a script with the modules mounted
 ```
 
+## PSBTs without embit
+
+`models/psbt_wasm.py`'s `WasmPSBTParser` gives the PSBT views what embit's `PSBTParser` does, from
+`parser.wasm`'s plan and the signer's review alone; `models/psbt.py` picks it where embit is missing.
+`tests/conftest.py` repeats every successful embit parse in the suite with it and compares what the views
+read: 118 parses agree. `tests/test_flows_psbt_wasm.py` scans, reviews and signs through the views with
+both parsers, and `pico/tests/psbt.py` prints the same review and signed PSBT on the Pico 2 as on CPython.
+
+Two differences, both from the signer checking each output itself:
+
+- P2WSH change without a registered multisig descriptor is an external spend, where embit presumes it
+  change from the psbt's claims (37 of the 118 parses, where the change fields are not compared).
+- Inputs of mixed script types are accepted; embit's parser refuses them as "Mixed inputs".
+
+The signed PSBT is what `parser_finalize` writes, untrimmed: the Pico has no embit to trim it with.
+
 ## What the Pico build gives up
 
 Whatever `signer.wasm` does not do: Electrum seeds, non-English wordlists, legacy P2PKH, custom

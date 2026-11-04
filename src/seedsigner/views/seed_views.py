@@ -5,7 +5,6 @@ import time
 from binascii import hexlify
 from gettext import gettext as _
 
-from embit.descriptor import Descriptor
 
 from seedsigner.gui.components import FontAwesomeIconConstants, SeedSignerIconConstants
 from seedsigner.gui.screens import (RET_CODE__BACK_BUTTON, ButtonListScreen,
@@ -561,7 +560,7 @@ class SeedOptionsView(View):
             return Destination(SeedSignMessageConfirmMessageView, skip_current_view=True)
 
         if self.controller.psbt:
-            from seedsigner.models.psbt_parser import PSBTParser
+            from seedsigner.models.psbt import PSBTParser
             if PSBTParser.has_matching_input_fingerprint(self.controller.psbt, self.seed, network=self.settings.get_value(SettingsConstants.SETTING__NETWORK)):
                 if self.controller.resume_main_flow and self.controller.resume_main_flow == Controller.FLOW__PSBT:
                     # Re-route us directly back to the start of the PSBT flow
@@ -1943,7 +1942,7 @@ class SeedAddressVerificationView(View):
 
 
     class BruteForceAddressVerificationThread(BaseThread):
-        def __init__(self, address: str, seed: Seed, descriptor: Descriptor, script_type: str, embit_network: str, network: str, derivation_path: str, threadsafe_counter: ThreadsafeCounter, verified_index: ThreadsafeCounter, verified_index_is_change: ThreadsafeCounter):
+        def __init__(self, address: str, seed: Seed, descriptor, script_type: str, embit_network: str, network: str, derivation_path: str, threadsafe_counter: ThreadsafeCounter, verified_index: ThreadsafeCounter, verified_index_is_change: ThreadsafeCounter):
             """
                 Either seed or descriptor will be None
             """

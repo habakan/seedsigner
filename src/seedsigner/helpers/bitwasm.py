@@ -27,6 +27,11 @@ PARSER_SHA256 = "4a5c16b42ebb958a84063386511daf6dd0ed39d4cd5a20aba1c76047c2841e5
 SIGNER_SHA256 = "3be85e82fabe05765e63bb35c03d94daa4f6d25a61ea5449623de713fd196517"
 
 OWNER_EXTERNAL, OWNER_CHANGE, OWNER_SELF = 0, 1, 2
+
+# plan_t, from parser/c/include/plan.h (its _Static_asserts pin these): inputs and outputs, and in
+# each the keypath {depth u8, fingerprint u32, path u32[8]} and the scriptPubKey {len u8, bytes[83]}
+PLAN_INPUTS, PLAN_INPUT_SIZE, PLAN_OUTPUTS, PLAN_OUTPUT_SIZE, PLAN_WSCRIPTS, PLAN_WSCRIPT_SIZE = 24, 176, 2840, 136, 5016, 220
+PLAN_IN_SPK, PLAN_IN_KEY, PLAN_OUT_SPK, PLAN_OUT_KEY = 48, 132, 8, 92
 TEXT_KIND_OP_RETURN = 1
 
 P_ERRORS = {1: "MAGIC", 2: "FORMAT", 3: "DUPLICATE", 4: "TX", 5: "UNSUPPORTED", 6: "LIMIT", 7: "UTXO", 8: "SIG"}
@@ -97,6 +102,20 @@ def use(seed, network: str = None) -> Signer:
     if network is not None:
         S.init(testnet=network != SettingsConstants.MAINNET)
     return S
+
+
+
+def plan_fingerprints(psbt_bytes: bytes, fingerprint: int) -> bool:
+    """Whether parser.wasm finds any input claiming `fingerprint`: a routing hint, as in SeedSigner."""
+    P = _load_parser()
+    if len(psbt_bytes) > P.parser_input_cap():
+        return False
+    at = P.parser_input()
+    P.memory[at:at + len(psbt_bytes)] = psbt_bytes
+    if P.parser_parse(len(psbt_bytes), fingerprint) != 0:
+        return False
+    plan = P.parser_plan()
+    return any(P.memory[plan + PLAN_INPUTS + i * PLAN_INPUT_SIZE + PLAN_IN_KEY] for i in range(P.memory[plan + PLAN_N_INPUTS]))
 
 
 
@@ -197,13 +216,14 @@ class BitwasmReview:
             raise BitwasmError(f"parser: {P_ERRORS.get(rc, rc)}")
 
         plan = bytes(P.memory[P.parser_plan():P.parser_plan() + PLAN_SIZE])
+        self.plan = plan
         prevtxs = []
         for i in range(plan[PLAN_N_INPUTS]):
             n, off = P.parser_prevtx_len(i), at + P.parser_prevtx_off(i)
             prevtxs.append(bytes(P.memory[off:off + n]) if n else None)
         S.set_plan(plan).set_prevtxs(prevtxs)
         try:
-            S.review()
+            self.review = S.review()
             return S.display()
         except SignerError as e:
             raise BitwasmError(str(e)) from e

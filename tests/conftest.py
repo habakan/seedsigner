@@ -45,3 +45,42 @@ def pytest_collection_modifyitems(config, items):
         reason = BITWASM_REFUSES.get(item.nodeid.split("tests/", 1)[-1])
         if reason:
             item.add_marker(pytest.mark.xfail(reason=reason, strict=True))
+
+
+# Every successful embit PSBTParser.parse in the suite is repeated with WasmPSBTParser, the Pico's,
+# and the answers the views read must agree. The one allowed difference is P2WSH change without a
+# registered descriptor, which the signer calls external; then the change fields are not compared
+WASM_PARSER_CHECKS = {"compared": 0, "change_skipped": 0}
+
+
+@pytest.fixture(autouse=True)
+def compare_with_wasm_parser(monkeypatch):
+    from seedsigner.models.psbt_parser import PSBTParser
+    from seedsigner.models.psbt_wasm import WasmPSBTParser
+    parse = PSBTParser.parse
+
+    def checked(self):
+        ok = parse(self)
+        if ok:
+            w = WasmPSBTParser(self.psbt, self.seed, self.network, self.psbt_bytes, self.multisig_descriptor)
+            fields = ["fee_amount", "input_amount", "num_inputs", "op_return_data", "is_multisig"]
+            if self.is_multisig and not w.bitwasm_review.wallet_registered:
+                WASM_PARSER_CHECKS["change_skipped"] += 1
+            else:
+                fields += ["spend_amount", "change_amount", "destination_addresses", "destination_amounts", "is_high_fee"]
+                want = [(c["output_index"], c["address"], c["amount"], list(c["verified_derivation_path"])) for c in self.change_data]
+                got = [(c["output_index"], c["address"], c["amount"], c["verified_derivation_path"]) for c in w.change_data]
+                assert got == want, f"change_data: wasm {got}, embit {want}"
+            for f in fields:
+                assert getattr(w, f) == getattr(self, f), f"{f}: wasm {getattr(w, f)!r}, embit {getattr(self, f)!r}"
+            assert (w.policy or {}).get("type") == (self.policy or {}).get("type")
+            assert (w.policy or {}).get("m") == (self.policy or {}).get("m")
+            WASM_PARSER_CHECKS["compared"] += 1
+        return ok
+
+    monkeypatch.setattr(PSBTParser, "parse", checked)
+
+
+def pytest_terminal_summary(terminalreporter):
+    terminalreporter.write_line(f"WasmPSBTParser agreed with PSBTParser on {WASM_PARSER_CHECKS['compared']} parses "
+                                f"({WASM_PARSER_CHECKS['change_skipped']} without comparing unregistered multisig change)")

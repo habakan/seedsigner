@@ -7,6 +7,10 @@ NO_EMBIT = [
     "seedsigner.helpers.mnemonic_generation",
     "seedsigner.helpers.wallet",
     "seedsigner.models.seed",
+    "seedsigner.models.psbt",
+    "seedsigner.models.psbt_wasm",
+    "seedsigner.models.decode_qr",
+    "seedsigner.models.encode_qr",
 ]
 
 

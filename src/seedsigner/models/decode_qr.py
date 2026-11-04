@@ -6,7 +6,10 @@ import zlib
 
 from binascii import a2b_base64, b2a_base64
 from enum import IntEnum
-from embit import psbt, bip39
+try:
+    from embit import psbt
+except ImportError:
+    psbt = None  # the Pico build: PSBTs stay bytes, read by parser.wasm
 from pyzbar import pyzbar
 from pyzbar.pyzbar import ZBarSymbol
 from urtypes.crypto import PSBT as UR_PSBT
@@ -149,6 +152,8 @@ class DecodeQR:
         if self.complete:
             data = self.get_data_psbt()
             if data != None:
+                if psbt is None:
+                    return bytes(data) if DecodeQR.is_psbt_bytes(data) else None
                 try:
                     return psbt.PSBT.parse(data)
                 except:
@@ -455,22 +460,24 @@ class DecodeQR:
             return False
 
 
+    @staticmethod
+    def is_psbt_bytes(raw) -> bool:
+        # The magic is enough to tell the QR type; parsing, and refusing, is the parser's
+        return bytes(raw[:5]) == b"psbt\xff"
+
+
     @staticmethod   
     def is_base64_psbt(s):
         try:
-            if DecodeQR.is_base64(s):
-                psbt.PSBT.parse(a2b_base64(s))
-                return True
+            return DecodeQR.is_base64(s) and DecodeQR.is_psbt_bytes(a2b_base64(s))
         except Exception:
             return False
-        return False
 
 
     @staticmethod
     def is_base43_psbt(s):
         try:
-            psbt.PSBT.parse(DecodeQR.base43_decode(s))
-            return True
+            return DecodeQR.is_psbt_bytes(DecodeQR.base43_decode(s))
         except Exception:
             return False
 
@@ -861,7 +868,8 @@ class SeedQrDecoder(BaseSingleFrameQrDecoder):
 
         if qr_type == QRType.SEED__COMPACTSEEDQR:
             try:
-                self.seed_phrase = bip39.mnemonic_from_bytes(segment).split()
+                from seedsigner.helpers.mnemonic_generation import generate_mnemonic_from_bytes
+                self.seed_phrase = generate_mnemonic_from_bytes(segment)
                 self.complete = True
                 self.collected_segments = 1
                 return DecodeQRStatus.COMPLETE
