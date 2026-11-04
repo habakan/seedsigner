@@ -14,7 +14,7 @@ import struct
 
 from .wamr import Instance
 
-PLAN_SIZE = 6712
+PLAN_SIZE = 8536
 PLAN_N_INPUTS = 16
 PLAN_N_OUTPUTS = 17
 RV_SIZE = 64
@@ -39,18 +39,19 @@ MAX_INPUTS = 16
 MAX_OUTPUTS = 16
 XPUB_MAX = 120
 DESC_MAX = 180
+ADDRESS_MAX = 75
 PREVTX_MAX = 32768
 NONCE_SIZE = 33
 CBOR_MAX = 1024
-MS_SIZE = 732
+MS_SIZE = 1136
 MS_THRESHOLD = 0
 MS_N = 1
 MS_OURS = 2
 MS_FINGERPRINTS = 4
-MS_RECEIVE = 16
+MS_RECEIVE = 28
 MS_RECEIVE_CAP = 75
-MS_DESCRIPTOR = 91
-MS_DESCRIPTOR_CAP = 640
+MS_DESCRIPTOR = 103
+MS_DESCRIPTOR_CAP = 1024
 
 OWNER = ["EXTERNAL", "CHANGE", "SELF"]
 TEXT_KIND = ["ADDRESS", "OP_RETURN", "SCRIPT"]
@@ -170,6 +171,12 @@ class Signer:
         return self._generate(rolls, lambda: self._e.signer_mnemonic_from_dice(len(rolls), words),
                               "mnemonic_from_dice", self._e.signer_mnemonic_output)
 
+    def dice_check(self, rolls: bytes, words=24) -> int:
+        """0 unless the rolls are the right count of 1 to 6, else 1, plus 2 for uneven faces and 4 for
+        uneven steps between rolls. The rolls are kept."""
+        self._input(rolls)
+        return self._e.signer_dice_check(len(rolls), words)
+
     def seedqr_from_mnemonic(self, mnemonic: bytearray, compact=False) -> bytearray:
         return self._generate(mnemonic, lambda: self._e.signer_seedqr_from_mnemonic(len(mnemonic), int(compact)),
                               "seedqr_from_mnemonic", self._e.signer_seedqr_output)
@@ -280,6 +287,15 @@ class Signer:
         if rc != -NOT_FOUND:
             raise SignerError("find_address", -rc)
         return None
+
+    def address(self, purpose=84, account=0, chain=0, index=0) -> str:
+        """The address at m/purpose'/coin'/account'/chain/index: purpose 49, 84 or 86, chain 0 or 1, index below 100000."""
+        if not all(0 <= v < 2**32 for v in (purpose, account, chain, index)):
+            raise ValueError(f"purpose {purpose}, account {account}, chain {chain} and index {index} out of range")
+        rc = self._e.signer_address(purpose, account, chain, index)
+        if rc != 0:
+            raise SignerError("address", rc)
+        return self._cstr(self._e.signer_address_output(), ADDRESS_MAX)
 
     def message_review(self, message: bytes, purpose=84, account=0, chain=0, index=0):
         self._input(message)

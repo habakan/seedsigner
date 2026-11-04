@@ -7,7 +7,7 @@ PSBTParser._check_with_bitwasm for what has to agree.
 
 Seeds are derived inside signer.wasm. It holds one key at a time: the seed last passed to use().
 
-The modules are bitwasm-signer 5ae24be's build/parser.wasm and build/signer.wasm, pinned
+The modules are bitwasm-signer d4b970a's build/parser.wasm and build/signer.wasm, pinned
 by hash. libiwasm (WAMR 2.4.5, classic interpreter) comes from the OS image.
 """
 import hashlib
@@ -21,8 +21,8 @@ from seedsigner.models.settings import SettingsConstants
 
 logger = logging.getLogger(__name__)
 
-PARSER_SHA256 = "9407abe3a65a56ebcfcab6da3b685f4e21ce9f6a60b3feddd299ddc0def89bab"
-SIGNER_SHA256 = "f1ec4d091292d83f44cd479219914e1b2f080c930867e8086d731bf76deb979c"
+PARSER_SHA256 = "4a5c16b42ebb958a84063386511daf6dd0ed39d4cd5a20aba1c76047c2841e5f"
+SIGNER_SHA256 = "3be85e82fabe05765e63bb35c03d94daa4f6d25a61ea5449623de713fd196517"
 
 OWNER_EXTERNAL, OWNER_CHANGE, OWNER_SELF = 0, 1, 2
 TEXT_KIND_OP_RETURN = 1
