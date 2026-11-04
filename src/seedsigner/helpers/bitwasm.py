@@ -5,6 +5,8 @@ embit still reads the psbt for the screens, but nothing is signed unless signer.
 review of the same bytes agrees with it, and only signer.wasm signs. See
 PSBTParser._check_with_bitwasm for what has to agree.
 
+Seeds are derived inside signer.wasm. It holds one key at a time: the seed last passed to use().
+
 The modules are bitwasm-signer 5ae24be's build/parser.wasm and build/signer.wasm, pinned
 by hash. libiwasm (WAMR 2.4.5, classic interpreter) comes from the OS image.
 """
@@ -28,6 +30,7 @@ TEXT_KIND_OP_RETURN = 1
 P_ERRORS = {1: "MAGIC", 2: "FORMAT", 3: "DUPLICATE", 4: "TX", 5: "UNSUPPORTED", 6: "LIMIT", 7: "UTXO", 8: "SIG"}
 
 _modules = None
+_active = None
 
 
 
@@ -39,7 +42,6 @@ class BitwasmError(Exception):
 def _load_modules():
     """
     One parser and one signer instance per process, read and hash-checked on first use.
-    The signer holds no key between reviews: every path out of it unloads.
     """
     global _modules
     if _modules is None:
@@ -50,8 +52,84 @@ def _load_modules():
             signer_wasm = f.read()
         if hashlib.sha256(parser_wasm).hexdigest() != PARSER_SHA256:
             raise BitwasmError("parser.wasm is not the pinned build")
-        _modules = (Instance(parser_wasm), Signer(signer_wasm, sha256=SIGNER_SHA256))
+        _modules = (Instance(parser_wasm), Signer(signer_wasm, sha256=SIGNER_SHA256).init())
     return _modules
+
+
+
+def use(seed, network: str = None) -> Signer:
+    """
+    signer.wasm with `seed`'s key loaded, deriving it only when another seed was loaded last.
+    A network re-inits the module, which keeps the key but drops any review or multisig wallet.
+    """
+    global _active
+    S = _load_modules()[1]
+    if _active is not seed:
+        _active = None
+        seed.load_into(S)
+        _active = seed
+    if network is not None:
+        S.init(testnet=network != SettingsConstants.MAINNET)
+    return S
+
+
+
+def signer() -> Signer:
+    """signer.wasm for what needs no key: new mnemonics and SeedQRs."""
+    return _load_modules()[1]
+
+
+
+def forget(seed=None):
+    """Unloads the key, or only `seed`'s when given."""
+    global _active
+    if seed is None or _active is seed:
+        _active = None
+        if _modules is not None:
+            _modules[1].unload()
+
+
+
+class Wordlist:
+    """signer.wasm's English wordlist, read from its memory rather than copied into the heap."""
+    def __init__(self):
+        S = _load_modules()[1]
+        self._m, self._at = S._m, S._e.signer_wordlist()
+
+    def __len__(self):
+        return 2048
+
+    def __getitem__(self, i):
+        if isinstance(i, slice):
+            return [self[j] for j in range(*i.indices(2048))]
+        if i < 0:
+            i += 2048
+        if not 0 <= i < 2048:
+            raise IndexError("wordlist index out of range")
+        at = self._at + 8 * i
+        return bytes(self._m[at:at + 8]).split(b"\0", 1)[0].decode()
+
+    def __iter__(self):
+        return (self[i] for i in range(2048))
+
+    def index(self, word):
+        lo, hi = 0, 2048
+        while lo < hi:
+            mid = (lo + hi) // 2
+            if self[mid] < word:
+                lo = mid + 1
+            else:
+                hi = mid
+        if lo < 2048 and self[lo] == word:
+            return lo
+        raise ValueError(f"{word!r} is not in the dictionary")
+
+    def __contains__(self, word):
+        try:
+            self.index(word)
+            return True
+        except (ValueError, TypeError):
+            return False
 
 
 
@@ -62,22 +140,18 @@ class BitwasmReview:
     sign() parses and reviews the same bytes again and refuses unless the display is
     unchanged, so what was compared with the screens is what gets signed.
     """
-    def __init__(self, psbt_bytes: bytes, seed_bytes: bytes, network: str, multisig_descriptor: str | None = None):
+    def __init__(self, psbt_bytes: bytes, seed, network: str, multisig_descriptor: str | None = None):
         self.psbt_bytes = bytes(psbt_bytes)
-        self.seed_bytes = bytes(seed_bytes)
+        self.seed = seed
         self.network = network
         self.multisig_descriptor = multisig_descriptor
         self.wallet_registered = False
-        try:
-            self.display = self._review()
-        finally:
-            _load_modules()[1].unload()
+        self.display = self._review()
 
 
     def _review(self) -> dict:
-        P, S = _load_modules()
-        S.init(testnet=self.network != SettingsConstants.MAINNET)
-        S.load_seed(bytearray(self.seed_bytes))
+        P = _load_modules()[0]
+        S = use(self.seed, self.network)
 
         self.wallet_registered = False
         if self.multisig_descriptor:
@@ -110,26 +184,24 @@ class BitwasmReview:
 
 
     def sign(self) -> bytes:
-        """The signed psbt as parser.wasm writes it. The key is unloaded either way."""
-        P, S = _load_modules()
+        """The signed psbt as parser.wasm writes it."""
+        P = _load_modules()[0]
+        if self._review() != self.display:
+            raise BitwasmError("the transaction changed after it was reviewed")
+        S = use(self.seed)
+        nonces = bytes(P.memory[P.parser_nonces():P.parser_nonces() + MAX_INPUTS * NONCE_SIZE])
         try:
-            if self._review() != self.display:
-                raise BitwasmError("the transaction changed after it was reviewed")
-            nonces = bytes(P.memory[P.parser_nonces():P.parser_nonces() + MAX_INPUTS * NONCE_SIZE])
-            try:
-                sigs = S.sign(nonces)
-            except SignerError as e:
-                raise BitwasmError(str(e)) from e
+            sigs = S.sign(nonces)
+        except SignerError as e:
+            raise BitwasmError(str(e)) from e
 
-            base, points = P.parser_sigs(), P.parser_nonce_points()
-            P.memory[points:points + MAX_INPUTS * NONCE_SIZE] = bytes(MAX_INPUTS * NONCE_SIZE)
-            for i, sig in enumerate(sigs):
-                P.memory[base + i * SIG_SIZE:base + (i + 1) * SIG_SIZE] = sig["raw"]
-                if sig["point"]:
-                    P.memory[points + i * NONCE_SIZE:points + (i + 1) * NONCE_SIZE] = sig["point"]
-            n = P.parser_finalize(len(sigs))
-            if n < 0:
-                raise BitwasmError(f"parser: {P_ERRORS.get(-n, -n)}")
-            return bytes(P.memory[P.parser_output():P.parser_output() + n])
-        finally:
-            S.unload()
+        base, points = P.parser_sigs(), P.parser_nonce_points()
+        P.memory[points:points + MAX_INPUTS * NONCE_SIZE] = bytes(MAX_INPUTS * NONCE_SIZE)
+        for i, sig in enumerate(sigs):
+            P.memory[base + i * SIG_SIZE:base + (i + 1) * SIG_SIZE] = sig["raw"]
+            if sig["point"]:
+                P.memory[points + i * NONCE_SIZE:points + (i + 1) * NONCE_SIZE] = sig["point"]
+        n = P.parser_finalize(len(sigs))
+        if n < 0:
+            raise BitwasmError(f"parser: {P_ERRORS.get(-n, -n)}")
+        return bytes(P.memory[P.parser_output():P.parser_output() + n])

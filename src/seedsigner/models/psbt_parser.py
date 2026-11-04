@@ -961,7 +961,7 @@ class PSBTParser():
         try:
             self.bitwasm_review = BitwasmReview(
                 self.psbt_bytes or self.psbt.serialize(),
-                self.seed.seed_bytes,
+                self.seed,
                 self.network,
                 str(self.multisig_descriptor) if self.multisig_descriptor else None,
             )

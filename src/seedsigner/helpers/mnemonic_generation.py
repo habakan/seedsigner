@@ -1,7 +1,7 @@
 import hashlib
 import unicodedata
 
-from embit import bip39
+from seedsigner.helpers import bitwasm
 from seedsigner.models.settings_definition import SettingsConstants
 from seedsigner.models.seed import Seed
 
@@ -40,24 +40,22 @@ def calculate_checksum(mnemonic: list | str, wordlist_language_code: str = Setti
     if len(mnemonic) not in [12, 24]:
         raise Exception("Pass in a 12- or 24-word mnemonic")
     
-    # Work on a copy of the input list
-    mnemonic_copy = mnemonic.copy()
-
-    # Convert the resulting mnemonic to bytes, but we `ignore_checksum` validation
-    # because we assume it's incorrect since we either let the user select their own
-    # final word OR we injected the 0000 word from the wordlist.
-    mnemonic_bytes = bip39.mnemonic_to_bytes(unicodedata.normalize("NFKD", " ".join(mnemonic_copy)), ignore_checksum=True, wordlist=Seed.get_wordlist(wordlist_language_code))
-
-    # This function will convert the bytes back into a mnemonic, but it will also
-    # calculate the proper checksum bits while doing so. For a 12-word seed it will just
-    # overwrite the last 4 bits from the above result with the checksum; for a 24-word
-    # seed it'll overwrite the last 8 bits.
-    return bip39.mnemonic_from_bytes(mnemonic_bytes).split()
+    # Keep the entropy bits and drop whatever checksum bits the final word carries: the user
+    # may have picked it, or it is the 0000 word injected above. The checksum is recomputed.
+    wordlist = Seed.get_wordlist(wordlist_language_code)
+    bits = 0
+    for word in unicodedata.normalize("NFKD", " ".join(mnemonic)).split():
+        bits = (bits << 11) | wordlist.index(word)
+    checksum_bits = len(mnemonic) // 3
+    entropy_bytes = (bits >> checksum_bits).to_bytes(len(mnemonic) * 4 // 3, "big")
+    return generate_mnemonic_from_bytes(entropy_bytes, wordlist_language_code)
 
 
 
 def generate_mnemonic_from_bytes(entropy_bytes, wordlist_language_code: str = SettingsConstants.WORDLIST_LANGUAGE__ENGLISH) -> list[str]:
-    return bip39.mnemonic_from_bytes(entropy_bytes, wordlist=Seed.get_wordlist(wordlist_language_code)).split()
+    if wordlist_language_code != SettingsConstants.WORDLIST_LANGUAGE__ENGLISH:
+        raise Exception(f"Unrecognized wordlist_language_code {wordlist_language_code}")
+    return bitwasm.signer().mnemonic_from_entropy(bytearray(entropy_bytes)).decode().split()
 
 
 
@@ -78,7 +76,7 @@ def generate_mnemonic_from_dice(roll_data: str, wordlist_language_code: str = Se
         entropy_bytes = entropy_bytes[:16]
 
     # Return as a list
-    return bip39.mnemonic_from_bytes(entropy_bytes, wordlist=Seed.get_wordlist(wordlist_language_code)).split()
+    return generate_mnemonic_from_bytes(entropy_bytes, wordlist_language_code)
 
 
 
@@ -97,7 +95,7 @@ def generate_mnemonic_from_coin_flips(coin_flips: str, wordlist_language_code: s
         entropy_bytes = entropy_bytes[:16]
 
     # Return as a list
-    return bip39.mnemonic_from_bytes(entropy_bytes, wordlist=Seed.get_wordlist(wordlist_language_code)).split()
+    return generate_mnemonic_from_bytes(entropy_bytes, wordlist_language_code)
 
 
 

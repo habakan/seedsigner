@@ -3,11 +3,9 @@ import unicodedata
 import hashlib
 import hmac
 
-from binascii import hexlify
-from embit import bip39, bip32, bip85
-from embit.networks import NETWORKS
 from typing import List
 
+from seedsigner.helpers import bitwasm
 from seedsigner.models.settings import SettingsConstants
 
 logger = logging.getLogger(__name__)
@@ -15,6 +13,10 @@ logger = logging.getLogger(__name__)
 
 class InvalidSeedException(Exception):
     pass
+
+
+
+_wordlist = None
 
 
 
@@ -32,25 +34,44 @@ class Seed:
         self._passphrase: str = ""
         self.set_passphrase(passphrase, regenerate_seed=False)
 
-        self.seed_bytes: bytes = None
+        self._seed_bytes: bytes = None
+        self._fingerprint: str = None
         self._generate_seed()
 
 
     @staticmethod
     def get_wordlist(wordlist_language_code: str = SettingsConstants.WORDLIST_LANGUAGE__ENGLISH) -> List[str]:
         # TODO: Support other BIP-39 wordlist languages!
+        global _wordlist
         if wordlist_language_code == SettingsConstants.WORDLIST_LANGUAGE__ENGLISH:
-            return bip39.WORDLIST
+            _wordlist = _wordlist or bitwasm.Wordlist()
+            return _wordlist
         else:
             raise Exception(f"Unrecognized wordlist_language_code {wordlist_language_code}")
 
 
     def _generate_seed(self):
+        self._seed_bytes = None
+        bitwasm.forget(self)
+        bitwasm.use(self)
+
+
+    def load_into(self, signer):
+        """Derives the key inside signer.wasm, which also checks the words and their checksum."""
         try:
-            self.seed_bytes = bip39.mnemonic_to_seed(self.mnemonic_str, password=self._passphrase, wordlist=self.wordlist)
-        except Exception as e:
+            signer.seed_from_mnemonic(bytearray(self.mnemonic_str.encode()), bytearray(self._passphrase.encode()))
+        except (RuntimeError, ValueError) as e:
             logger.info(repr(e), exc_info=True)
             raise InvalidSeedException(repr(e))
+        self._fingerprint = signer.fingerprint
+
+
+    @property
+    def seed_bytes(self) -> bytes:
+        # Only for the embit callers not yet moved to signer.wasm; MicroPython has no pbkdf2_hmac
+        if self._seed_bytes is None:
+            self._seed_bytes = hashlib.pbkdf2_hmac("sha512", self.mnemonic_str.encode(), b"mnemonic" + self._passphrase.encode(), 2048)
+        return self._seed_bytes
 
 
     @property
@@ -126,6 +147,8 @@ class Seed:
 
 
     def detect_version(self, derivation_path: str, network: str = SettingsConstants.MAINNET, sig_type: str = SettingsConstants.SINGLE_SIG) -> str:
+        from embit import bip32
+        from embit.networks import NETWORKS
         embit_network = NETWORKS[SettingsConstants.map_network_to_embit(network)]
         return bip32.detect_version(derivation_path, default="xpub", network=embit_network)
 
@@ -146,8 +169,7 @@ class Seed:
 
 
     def get_fingerprint(self, network: str = SettingsConstants.MAINNET) -> str:
-        root = bip32.HDKey.from_seed(self.seed_bytes, version=NETWORKS[SettingsConstants.map_network_to_embit(network)]["xprv"])
-        return hexlify(root.child(0).fingerprint).decode('utf-8')
+        return self._fingerprint
 
 
     def get_xpub(self, wallet_path: str = '/', network: str = SettingsConstants.MAINNET):
@@ -158,17 +180,13 @@ class Seed:
 
     def get_bip85_child_mnemonic(self, bip85_index: int, bip85_num_words: int, network: str = SettingsConstants.MAINNET):
         """Derives the seed's nth BIP-85 child mnemonic"""
-        root = bip32.HDKey.from_seed(self.seed_bytes, version=NETWORKS[SettingsConstants.map_network_to_embit(network)]["xprv"])
-
         # TODO: Support other BIP-39 wordlist languages!
-        return bip85.derive_mnemonic(root, bip85_num_words, bip85_index)
+        return bitwasm.use(self).bip85_mnemonic(bip85_num_words, bip85_index).decode()
         
 
     ### override operators    
     def __eq__(self, other):
-        if isinstance(other, Seed):
-            return self.seed_bytes == other.seed_bytes
-        return False
+        return type(other) is type(self) and other.mnemonic_str == self.mnemonic_str and other.passphrase == self.passphrase
 
 
 
@@ -183,10 +201,19 @@ class ElectrumSeed(Seed):
 
         # only support Electrum Segwit version for now
         if SettingsConstants.ELECTRUM_SEED_SEGWIT == prefix:
-            self.seed_bytes=hashlib.pbkdf2_hmac('sha512', self.mnemonic_str.encode('utf-8'), b'electrum' + self._passphrase.encode('utf-8'), iterations = SettingsConstants.ELECTRUM_PBKDF2_ROUNDS)
+            seed_bytes = hashlib.pbkdf2_hmac('sha512', self.mnemonic_str.encode('utf-8'), b'electrum' + self._passphrase.encode('utf-8'), iterations = SettingsConstants.ELECTRUM_PBKDF2_ROUNDS)
 
         else:
             raise InvalidSeedException(f"Unsupported Electrum seed format: {prefix}")
+
+        bitwasm.forget(self)
+        self._seed_bytes = seed_bytes
+        bitwasm.use(self)
+
+
+    def load_into(self, signer):
+        signer.load_seed(bytearray(self._seed_bytes))
+        self._fingerprint = signer.fingerprint
 
 
     def set_passphrase(self, passphrase: str, regenerate_seed: bool = True):
@@ -222,6 +249,7 @@ class ElectrumSeed(Seed):
 
 
     def detect_version(self, derivation_path: str, network: str = SettingsConstants.MAINNET, sig_type: str = SettingsConstants.SINGLE_SIG) -> str:
+        from embit.networks import NETWORKS
         embit_network = NETWORKS[SettingsConstants.map_network_to_embit(network)]
         return embit_network["zpub"] if sig_type == SettingsConstants.SINGLE_SIG else embit_network["Zpub"]
 
