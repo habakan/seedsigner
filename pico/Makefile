@@ -32,3 +32,11 @@ py:
 	  $(MPY_DIR)/lib/micropython-lib/python-stdlib/hmac/hmac.py $(OUT)/py/
 	cp $(MPY_DIR)/lib/micropython-lib/python-stdlib/os-path/os/path.py $(OUT)/py/os/
 .PHONY: py
+
+# Every module as MicroPython bytecode, which also proves it parses. st7789_mpy.py is the Pi's
+# viper-emitter driver; the Pico has its own display code
+mpy: py
+	rm -rf $(OUT)/mpy
+	cd $(OUT)/py && find . -name '*.py' ! -name st7789_mpy.py | while read f; do \
+	  mkdir -p ../mpy/$$(dirname $$f) && $(abspath $(MPY_DIR))/mpy-cross/build/mpy-cross -o ../mpy/$${f%.py}.mpy $$f || exit 1; done
+.PHONY: mpy
