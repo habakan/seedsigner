@@ -351,6 +351,28 @@ class Signer:
     def multisig_unload(self):
         self._e.signer_multisig_unload()
 
+    def multisig_address(self, chain=0, index=0) -> str:
+        """The registered multisig's address at chain 0 (receive) or 1 (change) and index below 100000."""
+        if not (0 <= chain < 2**32 and 0 <= index < 2**32):
+            raise ValueError(f"chain {chain} and index {index} out of range")
+        rc = self._e.signer_multisig_address(chain, index)
+        if rc != 0:
+            raise SignerError("multisig_address", rc)
+        return self._cstr(self._e.signer_address_output(), ADDRESS_MAX)
+
+    def multisig_find_address(self, address: str, count=1000):
+        """(chain, index) of the registered multisig's address, or None. Takes a bare address or a BIP21 URI."""
+        b = re.sub(r"^bitcoin:", "", address.strip(), flags=re.I).split("?")[0].encode()
+        if not 0 <= count < 2**32:
+            raise ValueError(f"count {count} out of range")
+        self._input(b)
+        rc = self._e.signer_multisig_find_address(len(b), count)
+        if rc >= 0:
+            return rc >> 20, rc & 0xFFFFF
+        if rc != -NOT_FOUND:
+            raise SignerError("multisig_find_address", -rc)
+        return None
+
     def account_cbor(self, account=0) -> bytes:
         """CBOR for this account's crypto-account UR."""
         if type(account) is not int or not 0 <= account < 2**32:

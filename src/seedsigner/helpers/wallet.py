@@ -292,3 +292,83 @@ def address(seed, derivation_path: str, network: str, is_change: bool, index: in
 def path_to_str(path: list) -> str:
     """embit's bip32.path_to_str: m/84h/0h/0h/1/0."""
     return "m" + "".join("/%d%s" % (i & 0x7FFFFFFF, "h" if i & 0x80000000 else "") for i in path)
+
+
+
+def _multipath(descriptor: str) -> str:
+    """Each key's children as the signer reads them, /<0;1>/*, where SeedSigner writes /{0,1}/*, /0/* or none for
+    embit. A checksum no longer fits once a key changes, so it goes then."""
+    out, i, n = [], 0, len(descriptor)
+    while True:
+        j = descriptor.find("]", i)
+        if j < 0:
+            out.append(descriptor[i:])
+            break
+        k = j + 1
+        while k < n and (descriptor[k].isalpha() or descriptor[k].isdigit()):
+            k += 1
+        out.append(descriptor[i:k])
+        for old in ("/{0,1}/*", "/0/*"):
+            if descriptor.startswith(old, k):
+                k += len(old)
+                out.append("/<0;1>/*")
+                break
+        else:
+            if k < n and descriptor[k] in ",)":
+                out.append("/<0;1>/*")
+        i = k
+    s = "".join(out)
+    return s if s == descriptor else s.split("#", 1)[0]
+
+
+
+class Multisig:
+    """
+    A multisig wallet where there is no embit: its descriptor as the signer reads it, and the seed of ours it is
+    registered with, as the signer derives its addresses only from one of its own keys.
+    """
+    def __init__(self, descriptor: str):
+        self.descriptor = _multipath(descriptor.strip())
+        self.seed = self.info = None
+
+
+    def register(self, seeds, network: str) -> bool:
+        """Registers it with the first of `seeds` it holds a key of; False when none does or the signer cannot read it."""
+        for seed in seeds:
+            try:
+                self.info, self.seed = bitwasm.use_multisig(seed, network, self.descriptor), seed
+                return True
+            except bitwasm.SignerError:
+                pass
+        return False
+
+
+    def address(self, index: int, is_change: bool, network: str) -> str:
+        bitwasm.use_multisig(self.seed, network, self.descriptor)
+        return for_network(bitwasm.signer().multisig_address(int(is_change), index), network)
+
+
+    def __str__(self):
+        return self.descriptor
+
+
+
+def multisig_policy(descriptor) -> tuple:
+    """(threshold, n, fingerprints) of embit's Descriptor, or of a Multisig."""
+    if isinstance(descriptor, Multisig):
+        fingerprints = descriptor.info["fingerprints"]
+        return str(descriptor.info["threshold"]), str(len(fingerprints)), fingerprints  # strings, as embit_utils gives
+    from binascii import hexlify
+    from seedsigner.helpers.embit_utils import get_multisig_policy
+    threshold, n = get_multisig_policy(descriptor)
+    return threshold, n, [hexlify(key.fingerprint).decode() for key in descriptor.keys]
+
+
+
+def multisig_address(descriptor, index: int, is_change: bool, network: str) -> str:
+    """The address of embit's Descriptor, or of a Multisig, at index on the receive or change chain."""
+    if isinstance(descriptor, Multisig):
+        return descriptor.address(index, is_change, network)
+    from seedsigner.helpers import embit_utils
+    return embit_utils.get_multisig_address(descriptor=descriptor, index=index, is_change=is_change,
+                                            embit_network=get_embit_network_name(network))

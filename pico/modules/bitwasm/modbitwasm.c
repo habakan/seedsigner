@@ -51,6 +51,8 @@ int signer_message_sign(void);
 int signer_multisig_load(unsigned int);
 int signer_multisig_load_cbor(unsigned int);
 void signer_multisig_unload(void);
+int signer_multisig_address(unsigned int, unsigned int);
+int signer_multisig_find_address(unsigned int, unsigned int);
 int signer_account_cbor(unsigned int);
 int signer_multisig_cbor(void);
 unsigned int signer_word_letters(unsigned int, unsigned int);
@@ -335,6 +337,18 @@ static mp_obj_t w_signer_multisig_unload(size_t n, const mp_obj_t *a) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(w_signer_multisig_unload_obj, 0, 0, w_signer_multisig_unload);
 
+static mp_obj_t w_signer_multisig_address(size_t n, const mp_obj_t *a) {
+    (void)n;
+    return mp_obj_new_int(signer_multisig_address((unsigned int)mp_obj_get_int_truncated(a[0]), (unsigned int)mp_obj_get_int_truncated(a[1])));
+}
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(w_signer_multisig_address_obj, 2, 2, w_signer_multisig_address);
+
+static mp_obj_t w_signer_multisig_find_address(size_t n, const mp_obj_t *a) {
+    (void)n;
+    return mp_obj_new_int(signer_multisig_find_address((unsigned int)mp_obj_get_int_truncated(a[0]), (unsigned int)mp_obj_get_int_truncated(a[1])));
+}
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(w_signer_multisig_find_address_obj, 2, 2, w_signer_multisig_find_address);
+
 static mp_obj_t w_signer_account_cbor(size_t n, const mp_obj_t *a) {
     (void)n, (void)a;
     return mp_obj_new_int(signer_account_cbor((unsigned int)mp_obj_get_int_truncated(a[0])));
@@ -427,6 +441,8 @@ static const mp_rom_map_elem_t globals[] = {
     { MP_ROM_QSTR(MP_QSTR_signer_multisig_load), MP_ROM_PTR(&w_signer_multisig_load_obj) },
     { MP_ROM_QSTR(MP_QSTR_signer_multisig_load_cbor), MP_ROM_PTR(&w_signer_multisig_load_cbor_obj) },
     { MP_ROM_QSTR(MP_QSTR_signer_multisig_unload), MP_ROM_PTR(&w_signer_multisig_unload_obj) },
+    { MP_ROM_QSTR(MP_QSTR_signer_multisig_address), MP_ROM_PTR(&w_signer_multisig_address_obj) },
+    { MP_ROM_QSTR(MP_QSTR_signer_multisig_find_address), MP_ROM_PTR(&w_signer_multisig_find_address_obj) },
     { MP_ROM_QSTR(MP_QSTR_signer_account_cbor), MP_ROM_PTR(&w_signer_account_cbor_obj) },
     { MP_ROM_QSTR(MP_QSTR_signer_multisig_cbor), MP_ROM_PTR(&w_signer_multisig_cbor_obj) },
     { MP_ROM_QSTR(MP_QSTR_signer_word_letters), MP_ROM_PTR(&w_signer_word_letters_obj) },

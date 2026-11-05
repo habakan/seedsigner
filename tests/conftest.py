@@ -58,9 +58,8 @@ def pytest_collection_modifyitems(config, items):
 
 
 # Every successful embit PSBTParser.parse in the suite is repeated with WasmPSBTParser, the Pico's,
-# and the answers the views read must agree. The one allowed difference is P2WSH change without a
-# registered descriptor, which the signer calls external; then the change fields are not compared
-WASM_PARSER_CHECKS = {"compared": 0, "change_skipped": 0}
+# and the answers the views read must agree, P2WSH change claimed before any descriptor included
+WASM_PARSER_CHECKS = {"compared": 0, "unproven": 0}
 
 
 @pytest.fixture(autouse=True)
@@ -75,13 +74,15 @@ def compare_with_wasm_parser(monkeypatch, request):
         ok = parse(self)
         if ok:
             w = WasmPSBTParser(self.psbt, self.seed, self.network, self.psbt_bytes, self.multisig_descriptor)
-            fields = ["fee_amount", "verified_input_amount", "num_inputs", "op_return_data", "is_multisig"]
-            if self.is_multisig and not w.bitwasm_review.wallet_registered:
-                WASM_PARSER_CHECKS["change_skipped"] += 1
+            fields = ["fee_amount", "verified_input_amount", "num_inputs", "op_return_data", "is_multisig", "spend_amount",
+                      "change_amount", "destination_addresses", "destination_amounts", "is_high_fee"]
+            want = [(c["output_index"], c["address"], c["amount"], list(c["verified_derivation_path"])) for c in self.change_data]
+            got = [(c["output_index"], c["address"], c["amount"], c["verified_derivation_path"]) for c in w.change_data]
+            if got != want and w.bitwasm_review.unverified_change:
+                # A claim upstream drops for its missing witness script, which the plan cannot show: not signed unproven
+                fields = fields[:5]
+                WASM_PARSER_CHECKS["unproven"] += 1
             else:
-                fields += ["spend_amount", "change_amount", "destination_addresses", "destination_amounts", "is_high_fee"]
-                want = [(c["output_index"], c["address"], c["amount"], list(c["verified_derivation_path"])) for c in self.change_data]
-                got = [(c["output_index"], c["address"], c["amount"], c["verified_derivation_path"]) for c in w.change_data]
                 assert got == want, f"change_data: wasm {got}, embit {want}"
             for f in fields:
                 assert getattr(w, f) == getattr(self, f), f"{f}: wasm {getattr(w, f)!r}, embit {getattr(self, f)!r}"
@@ -95,7 +96,7 @@ def compare_with_wasm_parser(monkeypatch, request):
 
 def pytest_terminal_summary(terminalreporter):
     terminalreporter.write_line(f"WasmPSBTParser agreed with PSBTParser on {WASM_PARSER_CHECKS['compared']} parses "
-                                f"({WASM_PARSER_CHECKS['change_skipped']} without comparing unregistered multisig change)")
+                                f"({WASM_PARSER_CHECKS['unproven']} with change claimed that only a descriptor can prove)")
 
 
 # SEEDSIGNER_RECORD_QR=<file>: every DecodeQR session in the suite (its add_data calls) is written there,

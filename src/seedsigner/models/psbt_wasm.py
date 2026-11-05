@@ -2,8 +2,8 @@
 PSBTParser's answers from parser.wasm and the signer alone, for the Pico build, which has no embit.
 
 The signer re-derives every key it calls ours, so an output it marks change or self is proven at the
-plan's path: that path is `verified_derivation_path`. P2WSH change is external unless the multisig
-descriptor registered with the signer; embit's parser would presume it change from the psbt's claims.
+plan's path: that path is `verified_derivation_path`. P2WSH change is the psbt's claim, as embit's parser
+has it, until verify_multisig_output() registers the descriptor and the signer re-derives it.
 """
 import struct
 
@@ -32,7 +32,9 @@ def _policy(spk: bytes, wscript: bytes) -> dict:
     if len(spk) == 23 and spk[:2] == b"\xa9\x14":
         return {"type": "p2sh-p2wpkh"}
     if len(spk) == 34 and spk[:2] == b"\x00\x20" and wscript:
-        return {"type": "p2wsh", "m": wscript[0] - 0x50, "n": wscript[-2] - 0x50}
+        if wscript[-1] == 0xae and 0x51 <= wscript[0] <= 0x60:  # OP_m <keys> OP_n OP_CHECKMULTISIG
+            return {"type": "p2wsh", "m": wscript[0] - 0x50, "n": wscript[-2] - 0x50}
+        return {"type": "p2wsh"}  # Liana's or_d, which SeedSigner shows as single key
     return None
 
 
@@ -121,7 +123,7 @@ class WasmPSBTParser:
                 self.op_return_amount += out["amount"]
                 continue
             address = wallet.for_network(out["text"], self.network)
-            if out["owner"] != P.OWNER_EXTERNAL:
+            if out["owner"] != P.OWNER_EXTERNAL or self._claims_multisig_change(plan, at, r):
                 self.change_data.append({
                     "output_index": i,
                     "address": address,
@@ -134,6 +136,10 @@ class WasmPSBTParser:
                 self.destination_amounts.append(out["amount"])
                 self.spend_amount += out["amount"]
 
+        # Upstream checks a claim against the output's witness script, which the plan does not carry: so unproven, it
+        # is shown as change, as there, but signed only once verify_multisig_output() proves it
+        r.unverified_change = any(out["owner"] == P.OWNER_EXTERNAL for out in (shown["outputs"][c["output_index"]]
+                                                                              for c in self.change_data))
         self.is_high_fee = self.has_high_fee()
         return True
 
@@ -158,9 +164,27 @@ class WasmPSBTParser:
         return len(self.destination_addresses)
 
 
+    def _claims_multisig_change(self, plan, at, review) -> bool:
+        """A P2WSH output the psbt says is this seed's, before any descriptor can say whether it is."""
+        spk, key = at + P.PLAN_OUT_SPK, at + P.PLAN_OUT_KEY
+        return (not review.wallet_registered and self.is_multisig and plan[spk] == 34 and plan[spk + 1:spk + 3] == b"\x00\x20"
+                and plan[key] and struct.unpack_from("<I", plan, key + 4)[0] == int(bitwasm.use(self.seed).fingerprint, 16))
+
+
     def verify_multisig_output(self, descriptor, change_num: int) -> bool:
-        # The signer counts P2WSH change only for the wallet it registered from this descriptor
-        return self.bitwasm_review.wallet_registered and change_num < len(self.change_data)
+        """Whether the signer, with `descriptor` registered, re-derives this change output as ours."""
+        if change_num >= len(self.change_data):
+            return False
+        if not self.bitwasm_review.wallet_registered or str(descriptor) != str(self.multisig_descriptor):
+            try:
+                r = P.BitwasmReview(self.psbt_bytes, self.seed, self.network, str(descriptor))
+            except P.BitwasmError:
+                return False
+            if not r.wallet_registered:
+                return False
+            self.bitwasm_review, self.multisig_descriptor = r, descriptor
+        out = self.bitwasm_review.display["outputs"][self.change_data[change_num]["output_index"]]
+        return out["owner"] != P.OWNER_EXTERNAL
 
 
     @staticmethod

@@ -2,7 +2,6 @@ import logging
 import random
 import time
 
-from binascii import hexlify
 from gettext import gettext as _
 
 
@@ -1971,9 +1970,8 @@ class SeedAddressVerificationView(View):
                 i = self.threadsafe_counter.cur_count
 
                 if self.descriptor:
-                    from seedsigner.helpers import embit_utils
-                    receive_address = embit_utils.get_multisig_address(descriptor=self.descriptor, index=i, is_change=False, embit_network=self.embit_network)
-                    change_address = embit_utils.get_multisig_address(descriptor=self.descriptor, index=i, is_change=True, embit_network=self.embit_network)
+                    receive_address = wallet.multisig_address(self.descriptor, i, False, self.network)
+                    change_address = wallet.multisig_address(self.descriptor, i, True, self.network)
 
                 else:
                     receive_address = wallet.address(self.seed, self.derivation_path, self.network, False, i)
@@ -2043,13 +2041,8 @@ class MultisigWalletDescriptorView(View):
     def run(self):
         descriptor = self.controller.multisig_wallet_descriptor
 
-        fingerprints = []
-        for key in descriptor.keys:
-            fingerprint = hexlify(key.fingerprint).decode()
-            fingerprints.append(fingerprint)
-        
-        from seedsigner.helpers.embit_utils import get_multisig_policy
-        threshold, n = get_multisig_policy(descriptor)
+        from seedsigner.helpers import wallet
+        threshold, n, fingerprints = wallet.multisig_policy(descriptor)
         # TRANSLATOR_NOTE: Multisig policy. For a "2 of 3" policy, "threshold" = 2; "n" = 3
         policy = _("{threshold} of {n}").format(threshold=threshold, n=n)
 

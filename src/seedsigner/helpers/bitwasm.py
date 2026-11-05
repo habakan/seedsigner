@@ -7,7 +7,7 @@ PSBTParser._check_with_bitwasm for what has to agree.
 
 Seeds are derived inside signer.wasm. It holds one key at a time: the seed last passed to use().
 
-The modules are bitwasm-signer 383d3c5's build/parser.wasm and build/signer.wasm, pinned
+The modules are bitwasm-signer 3824f28's build/parser.wasm and build/signer.wasm, pinned
 by hash. libiwasm (WAMR 2.4.5, classic interpreter) comes from the OS image. On MicroPython the
 signer is the same C linked into the firmware, which the Pico could not afford to interpret.
 """
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 PARSER_SHA256 = "d9318981f96de22a8d8976c6e0e1a6fa488bd94b00067b562b481892c2fbbdc7"
 # The Pico assembles UR in Python, so it runs the build without the UR decoder: 42 KB less of WAMR's pool
 PARSER_NO_UR_SHA256 = "a5a9d986f413a07c2f2f2c57b5151da0dfdddb09afbce64d45babb60170d080a"
-SIGNER_SHA256 = "e136e2d7b57990c862fc06530e53f024f4291b6e3dd68322341ad3a1924a64b0"
+SIGNER_SHA256 = "3a6362db0d7f588db9f4d725132f67dc35d01a2b7129a767551baee70d8bd181"
 
 OWNER_EXTERNAL, OWNER_CHANGE, OWNER_SELF = 0, 1, 2
 
@@ -42,6 +42,7 @@ P_ERRORS = {1: "MAGIC", 2: "FORMAT", 3: "DUPLICATE", 4: "TX", 5: "UNSUPPORTED", 
 _parser = None
 _signer = None
 _active = None
+_registered = None  # (seed, network, descriptor) of the multisig the signer holds, and what loading it said
 
 
 
@@ -98,16 +99,28 @@ def use(seed, network: str = None) -> Signer:
     signer.wasm with `seed`'s key loaded, deriving it only when another seed was loaded last.
     A network re-inits the module, which keeps the key but drops any review or multisig wallet.
     """
-    global _active
+    global _active, _registered
     S = _load_signer()
     if _active is not seed:
-        _active = None
+        _active = _registered = None
         seed.load_into(S)
         _active = seed
     if network is not None:
+        _registered = None
         # Strict OP_RETURN, as SeedSigner refuses one Bitcoin Core will not relay
         S.init(testnet=network != SettingsConstants.MAINNET, strict_op_return=True)
     return S
+
+
+def use_multisig(seed, network: str, descriptor: str) -> dict:
+    """Registers `descriptor` with `seed`'s key, unless it is what the signer holds already, and returns what
+    loading it said. Raises SignerError when the seed holds none of its keys or the descriptor is not one it reads."""
+    global _registered
+    if _registered and _registered[0] is seed and _registered[1:3] == (network, descriptor):
+        return _registered[3]
+    S = use(seed, network)
+    _registered = (seed, network, descriptor, S.multisig_load(descriptor))
+    return _registered[3]
 
 
 
@@ -133,9 +146,9 @@ def signer() -> Signer:
 
 def forget(seed=None):
     """Unloads the key, or only `seed`'s when given."""
-    global _active
+    global _active, _registered
     if seed is None or _active is seed:
-        _active = None
+        _active = _registered = None
         if _signer is not None:
             _signer.unload()
 
@@ -210,6 +223,7 @@ class BitwasmReview:
         self.network = network
         self.multisig_descriptor = multisig_descriptor
         self.wallet_registered = False
+        self.unverified_change = False  # set by WasmPSBTParser for P2WSH change the psbt claims and no descriptor proved
         self.display = self._review()
 
 
@@ -220,7 +234,7 @@ class BitwasmReview:
         self.wallet_registered = False
         if self.multisig_descriptor:
             try:
-                S.multisig_load(self.multisig_descriptor)
+                use_multisig(self.seed, self.network, self.multisig_descriptor)
                 self.wallet_registered = True
             except SignerError as e:
                 # Its change is then shown as external, as without a descriptor
@@ -250,6 +264,8 @@ class BitwasmReview:
 
     def sign(self) -> bytes:
         """The signed psbt as parser.wasm writes it."""
+        if self.unverified_change:
+            raise BitwasmError("multisig change not verified against its descriptor")
         P = _load_parser()
         if self._review() != self.display:
             raise BitwasmError("the transaction changed after it was reviewed")

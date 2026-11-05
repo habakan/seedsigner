@@ -625,8 +625,8 @@ class ToolsAddressExplorerAddressTypeView(View):
 
         wallet_descriptor_display_name = None
         if "wallet_descriptor" in data:
-            from seedsigner.helpers.embit_utils import get_multisig_policy
-            threshold, n = get_multisig_policy(data["wallet_descriptor"])
+            from seedsigner.helpers import wallet
+            threshold, n, _fingerprints = wallet.multisig_policy(data["wallet_descriptor"])
             # TRANSLATOR_NOTE: Multisig policy. For a "2 / 3 multisig" policy, "threshold" = 2; "n" = 3
             wallet_descriptor_display_name = _("{threshold} / {n} multisig").format(
                 threshold=threshold, n=n
@@ -711,12 +711,12 @@ class ToolsAddressExplorerAddressListView(View):
                         raise Exception(_("Custom Derivation address explorer not yet implemented"))
 
                 elif "wallet_descriptor" in data:
-                    from seedsigner.helpers import embit_utils
-                    from embit.descriptor import Descriptor
-                    descriptor: Descriptor = data["wallet_descriptor"]
-                    if descriptor.is_basic_multisig:
+                    from seedsigner.helpers import wallet
+                    descriptor = data["wallet_descriptor"]
+                    # A Multisig is one: the signer reads no other
+                    if isinstance(descriptor, wallet.Multisig) or descriptor.is_basic_multisig:
                         for i in range(self.start_index, self.start_index + addrs_per_screen):
-                            address = embit_utils.get_multisig_address(descriptor=descriptor, index=i, is_change=self.is_change, embit_network=data["embit_network"])
+                            address = wallet.multisig_address(descriptor, i, self.is_change, data["network"])
                             addresses.append(address)
                             data[addr_storage_key].append(address)
 

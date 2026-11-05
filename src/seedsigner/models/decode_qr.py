@@ -1147,9 +1147,13 @@ class GenericWalletQrDecoder(BaseSingleFrameQrDecoder):
 
     def add(self, segment, qr_type=QRType.WALLET__GENERIC):
         try:
-            # Validate via embit; without it (the Pico) descriptors are not read yet
-            from embit.descriptor import Descriptor
-            Descriptor.from_string(segment)
+            try:
+                from embit.descriptor import Descriptor
+                Descriptor.from_string(segment)
+            except ImportError:
+                # bitwasm-signer checks it as it registers it (ScanView), against a seed's key
+                if not segment.strip().startswith(("wsh(", "sh(")):
+                    raise ValueError("not a multisig descriptor")
             self.descriptor = segment
             self.complete = True
             return DecodeQRStatus.COMPLETE
