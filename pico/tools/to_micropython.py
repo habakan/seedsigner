@@ -221,6 +221,9 @@ class Strip(ast.NodeTransformer):
         if (isinstance(f, ast.Attribute) and f.attr == "__new__" and isinstance(f.value, ast.Name)
                 and len(node.args) == 1 and isinstance(node.args[0], ast.Name) and node.args[0].id == f.value.id):
             node.func = ast.Attribute(ast.Name("object"), "__new__")
+        # MicroPython has no format() built-in: format(x, spec) is pico_fmt(x, spec), as f-strings are
+        if not CPYTHON and isinstance(f, ast.Name) and f.id == "format" and len(node.args) == 2:
+            node.func = ast.Name("pico_fmt")
         return node
 
     def visit_ImportFrom(self, node):
