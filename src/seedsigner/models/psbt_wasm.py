@@ -9,7 +9,8 @@ import struct
 
 from seedsigner.helpers import bitwasm, wallet
 from seedsigner.models.psbt_errors import (PSBTBitwasmRefusedError, PSBTInputAmountVerificationError,
-    PSBTInputOwnershipClaimError, PSBTMalformedOpReturnError, PSBTNegativeFeeError, PSBTSeedCannotSignError)
+    PSBTInputOwnershipClaimError, PSBTMalformedOpReturnError, PSBTMissingInputUtxoError, PSBTNegativeFeeError,
+    PSBTSeedCannotSignError)
 from seedsigner.models.settings import SettingsConstants
 
 P = bitwasm
@@ -57,10 +58,11 @@ def _op_return(spk: bytes) -> bytes:
     return bytes(out)
 
 
-# signer.wasm's refusals that upstream's PSBTParser has its own error for, so the Pico shows the same screen.
+# The modules' refusals that upstream's PSBTParser has its own error for, so the Pico shows the same screen.
 # NOT_OURS also covers a P2WSH input whose witness script is not its own, which upstream calls an attack
-_REFUSALS = {"review: PREVTX_MISMATCH": PSBTInputAmountVerificationError, "review: FEE": PSBTNegativeFeeError,
-             "review: NOT_OURS": PSBTInputOwnershipClaimError}
+_REFUSALS = {"parser: UTXO": PSBTMissingInputUtxoError, "parser: UTXO_MISMATCH": PSBTInputAmountVerificationError,
+             "review: PREVTX_MISMATCH": PSBTInputAmountVerificationError, "review: FEE": PSBTNegativeFeeError,
+             "review: NOT_OURS": PSBTInputOwnershipClaimError, "review: OP_RETURN": PSBTMalformedOpReturnError}
 
 
 

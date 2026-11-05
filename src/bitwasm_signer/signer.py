@@ -58,7 +58,7 @@ TEXT_KIND = ["ADDRESS", "OP_RETURN", "SCRIPT"]
 ERRORS = {
     1: "FORMAT", 2: "NO_SEED", 3: "NOT_OURS", 4: "NOTHING_TO_SIGN", 5: "SIGHASH", 6: "SCRIPT",
     7: "PREVTX_MISSING", 8: "PREVTX_MISMATCH", 9: "FEE", 10: "NOT_REVIEWED", 11: "CRYPTO",
-    12: "NOT_FOUND", 13: "WALLET",
+    12: "NOT_FOUND", 13: "WALLET", 14: "OP_RETURN",
 }
 NOT_FOUND = 12
 
@@ -101,9 +101,10 @@ class Signer:
         if not all(isinstance(a, bytearray) for a in args):
             raise TypeError("secrets are bytearray, so that they can be cleared")
 
-    def init(self, testnet=False):
-        """Call once, before anything else. `testnet` also covers signet."""
-        if not self._e.signer_init(1 if testnet else 0):
+    def init(self, testnet=False, strict_op_return=False):
+        """Call once, before anything else. `testnet` also covers signet. `strict_op_return` refuses an OP_RETURN
+        output not made of complete pushes (OP_RETURN), as Bitcoin Core will not relay it."""
+        if not self._e.signer_init((1 if testnet else 0) | (2 if strict_op_return else 0)):
             raise RuntimeError("init failed")
         self._reviewed = False
         return self

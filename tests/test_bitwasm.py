@@ -133,6 +133,9 @@ def test_op_return_reads_as_upstream(script):
 
 
 @pytest.mark.parametrize("refusal, error", [
+    ("parser: UTXO", "PSBTMissingInputUtxoError"),
+    ("parser: UTXO_MISMATCH", "PSBTInputAmountVerificationError"),
+    ("review: OP_RETURN", "PSBTMalformedOpReturnError"),
     ("review: PREVTX_MISMATCH", "PSBTInputAmountVerificationError"),
     ("review: FEE", "PSBTNegativeFeeError"),
     ("review: NOT_OURS", "PSBTInputOwnershipClaimError"),
@@ -149,3 +152,25 @@ def test_wasm_refusals_reach_upstreams_errors(monkeypatch, refusal, error):
     monkeypatch.setattr(bitwasm, "BitwasmReview", refuse)
     with pytest.raises(getattr(psbt_errors, error)):
         WasmPSBTParser(b"psbt", seed=object())
+
+
+
+@pytest.mark.parametrize("tamper, error", [
+    (lambda inp: setattr(inp.non_witness_utxo.vout[0], "value", inp.non_witness_utxo.vout[0].value + 100_000),
+     "PSBTInputAmountVerificationError"),
+    (lambda inp: setattr(inp.witness_utxo, "value", inp.witness_utxo.value + 100_000), "PSBTInputAmountVerificationError"),
+    (lambda inp: (setattr(inp, "non_witness_utxo", None), setattr(inp, "witness_utxo", None)), "PSBTMissingInputUtxoError"),
+])
+@pytest.mark.parametrize("psbt_base64", [PSBTTestData.SINGLE_SIG_NATIVE_SEGWIT_1_INPUT, PSBTTestData.SINGLE_SIG_TAPROOT_1_INPUT])
+def test_wasm_refuses_tampered_utxos_as_upstream(psbt_base64, tamper, error):
+    """parser.wasm's UTXO and UTXO_MISMATCH reach the errors upstream raises for the same tampering."""
+    from seedsigner.models import psbt_errors
+    from seedsigner.models.psbt_wasm import WasmPSBTParser
+
+    psbt = PSBT.parse(a2b_base64(psbt_base64))
+    amount = sum(inp.utxo.value for inp in psbt.inputs)
+    psbt.outputs.clear()
+    psbt.outputs.append(create_output(PSBTTestData.SINGLE_SIG_NATIVE_SEGWIT_RECEIVE, amount - 5_000))
+    tamper(psbt.inputs[0])
+    with pytest.raises(getattr(psbt_errors, error)):
+        WasmPSBTParser(psbt.serialize(), seed=PSBTTestData.seed, network=SettingsConstants.REGTEST)

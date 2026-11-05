@@ -7,7 +7,7 @@ PSBTParser._check_with_bitwasm for what has to agree.
 
 Seeds are derived inside signer.wasm. It holds one key at a time: the seed last passed to use().
 
-The modules are bitwasm-signer d4b970a's build/parser.wasm and build/signer.wasm, pinned
+The modules are bitwasm-signer f7c3f2a's build/parser.wasm and build/signer.wasm, pinned
 by hash. libiwasm (WAMR 2.4.5, classic interpreter) comes from the OS image. On MicroPython the
 signer is the same C linked into the firmware, which the Pico could not afford to interpret.
 """
@@ -23,10 +23,10 @@ from seedsigner.models.settings import SettingsConstants
 
 logger = logging.getLogger(__name__)
 
-PARSER_SHA256 = "4a5c16b42ebb958a84063386511daf6dd0ed39d4cd5a20aba1c76047c2841e5f"
+PARSER_SHA256 = "d9318981f96de22a8d8976c6e0e1a6fa488bd94b00067b562b481892c2fbbdc7"
 # The Pico assembles UR in Python, so it runs the build without the UR decoder: 42 KB less of WAMR's pool
-PARSER_NO_UR_SHA256 = "aff69e0f1447505247934dd6a0c1ac9227bf9188e3964ea790b3af363507e073"
-SIGNER_SHA256 = "3be85e82fabe05765e63bb35c03d94daa4f6d25a61ea5449623de713fd196517"
+PARSER_NO_UR_SHA256 = "a5a9d986f413a07c2f2f2c57b5151da0dfdddb09afbce64d45babb60170d080a"
+SIGNER_SHA256 = "e136e2d7b57990c862fc06530e53f024f4291b6e3dd68322341ad3a1924a64b0"
 
 OWNER_EXTERNAL, OWNER_CHANGE, OWNER_SELF = 0, 1, 2
 
@@ -36,7 +36,8 @@ PLAN_INPUTS, PLAN_INPUT_SIZE, PLAN_OUTPUTS, PLAN_OUTPUT_SIZE, PLAN_WSCRIPTS, PLA
 PLAN_IN_SPK, PLAN_IN_KEY, PLAN_OUT_SPK, PLAN_OUT_KEY = 48, 132, 8, 92
 TEXT_KIND_OP_RETURN = 1
 
-P_ERRORS = {1: "MAGIC", 2: "FORMAT", 3: "DUPLICATE", 4: "TX", 5: "UNSUPPORTED", 6: "LIMIT", 7: "UTXO", 8: "SIG"}
+P_ERRORS = {1: "MAGIC", 2: "FORMAT", 3: "DUPLICATE", 4: "TX", 5: "UNSUPPORTED", 6: "LIMIT", 7: "UTXO", 8: "SIG",
+            9: "UTXO_MISMATCH"}
 
 _parser = None
 _signer = None
@@ -85,9 +86,9 @@ def _load_signer() -> Signer:
     global _signer
     if _signer is None:
         if sys.implementation.name == "micropython":
-            _signer = _NativeSigner().init()
+            _signer = _NativeSigner().init(strict_op_return=True)
         else:
-            _signer = Signer(_read("signer.wasm"), sha256=SIGNER_SHA256).init()
+            _signer = Signer(_read("signer.wasm"), sha256=SIGNER_SHA256).init(strict_op_return=True)
     return _signer
 
 
@@ -104,7 +105,8 @@ def use(seed, network: str = None) -> Signer:
         seed.load_into(S)
         _active = seed
     if network is not None:
-        S.init(testnet=network != SettingsConstants.MAINNET)
+        # Strict OP_RETURN, as SeedSigner refuses one Bitcoin Core will not relay
+        S.init(testnet=network != SettingsConstants.MAINNET, strict_op_return=True)
     return S
 
 
