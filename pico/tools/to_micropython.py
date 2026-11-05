@@ -196,6 +196,16 @@ class Strip(ast.NodeTransformer):
         self.generic_visit(node)
         return node
 
+    def visit_Expr(self, node):
+        # logger.info / debug never print on the Pico (pico/lib/logging.py stops at WARNING), but their
+        # f-strings are built anyway: the controller's renders the whole back stack on every screen
+        f = getattr(node.value, "func", None)
+        if (not CPYTHON and isinstance(f, ast.Attribute) and f.attr in ("info", "debug")
+                and isinstance(f.value, ast.Name) and f.value.id == "logger"):
+            return ast.Pass()
+        self.generic_visit(node)
+        return node
+
     def visit_FormattedValue(self, node):
         # MicroPython's format ignores __format__ (pico/lib/pico_format.py); only a constant spec is seen
         self.generic_visit(node)
