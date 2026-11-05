@@ -7,7 +7,7 @@ PSBTParser._check_with_bitwasm for what has to agree.
 
 Seeds are derived inside signer.wasm. It holds one key at a time: the seed last passed to use().
 
-The modules are bitwasm-signer f7c3f2a's build/parser.wasm and build/signer.wasm, pinned
+The modules are bitwasm-signer 383d3c5's build/parser.wasm and build/signer.wasm, pinned
 by hash. libiwasm (WAMR 2.4.5, classic interpreter) comes from the OS image. On MicroPython the
 signer is the same C linked into the firmware, which the Pico could not afford to interpret.
 """
