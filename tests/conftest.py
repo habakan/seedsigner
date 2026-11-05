@@ -54,7 +54,9 @@ WASM_PARSER_CHECKS = {"compared": 0, "change_skipped": 0}
 
 
 @pytest.fixture(autouse=True)
-def compare_with_wasm_parser(monkeypatch):
+def compare_with_wasm_parser(monkeypatch, request):
+    if "screenshot_generator" in str(request.node.fspath):
+        return  # screenshots, not a check; their PSBTs use testnet paths on mainnet
     from seedsigner.models.psbt_parser import PSBTParser
     from seedsigner.models.psbt_wasm import WasmPSBTParser
     parse = PSBTParser.parse

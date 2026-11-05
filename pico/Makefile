@@ -38,6 +38,7 @@ py:
 	  $(MPY_DIR)/lib/micropython-lib/python-stdlib/zlib/zlib.py $(OUT)/py/
 	cp $(MPY_DIR)/lib/micropython-lib/python-stdlib/os-path/os/path.py $(OUT)/py/os/
 	rm $(OUT)/py/seedsigner/hardware/displays/st7789_mpy.py
+	../.venv/bin/python tools/make_fonts.py $(OUT)/py/pico_fonts ../src/seedsigner/resources/fonts fonts_used.json
 	python3 -c "import sys; print('PARSER = ' + repr(open(sys.argv[1], 'rb').read()))" \
 	  ../src/seedsigner/resources/bitwasm/parser.wasm > $(OUT)/py/bitwasm_modules.py
 .PHONY: py
@@ -49,11 +50,12 @@ mpy: py
 	  mkdir -p ../mpy/$$(dirname $$f) && $(abspath $(MPY_DIR))/mpy-cross/build/mpy-cross -o ../mpy/$${f%.py}.mpy $$f || exit 1; done
 .PHONY: mpy
 
-# MicroPython for the Pico 2's RISC-V cores with the native signer. PICO_TOOLCHAIN_PATH is a RISC-V GCC,
-# such as bitwasm-signer-pico's third_party/riscv-toolchain
+# MicroPython for the Pico 2's RISC-V cores; PICO_TOOLCHAIN_PATH is a RISC-V GCC. The fonts outgrow 1 MB of
+# firmware, so it gets 3 MB and the filesystem 1 MB; passed in the environment so the port's CMAKE_ARGS stay
 rp2: py
 	@test -n "$(BITWASM_SIGNER)" || { echo "set BITWASM_SIGNER to a bitwasm-signer checkout at the pinned commit"; exit 1; }
-	BITWASM_SIGNER=$(abspath $(BITWASM_SIGNER)) WAMR_ROOT=$(abspath $(WAMR_ROOT)) $(MAKE) -C $(MPY_DIR)/ports/rp2 -j8 BOARD=RPI_PICO2 BOARD_VARIANT=RISCV \
+	BITWASM_SIGNER=$(abspath $(BITWASM_SIGNER)) WAMR_ROOT=$(abspath $(WAMR_ROOT)) \
+	  CMAKE_ARGS=-DMICROPY_HW_FLASH_STORAGE_BYTES=1048576 $(MAKE) -C $(MPY_DIR)/ports/rp2 -j8 BOARD=RPI_PICO2 BOARD_VARIANT=RISCV \
 	  USER_C_MODULES=$(abspath modules/micropython.cmake) FROZEN_MANIFEST=$(abspath manifest.py)
 .PHONY: rp2
 

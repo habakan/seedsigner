@@ -1,5 +1,5 @@
-/* The 240x240 canvas SeedSigner's screens draw on, and the ST7789 it goes to. One byte a pixel (RGB332)
- * keeps it to 57.6 KB, out of MicroPython's heap; rows become RGB565 on the way to the panel */
+/* The 240x240 canvas SeedSigner's screens draw on, and the ST7789 it goes to. One byte a pixel keeps it
+ * to 57.6 KB, out of MicroPython's heap: a 6x6x6 colour cube and 40 greys, as SeedSigner's palette is greys */
 #include <string.h>
 #include "py/obj.h"
 #include "py/objarray.h"
@@ -17,7 +17,26 @@
 
 static uint8_t canvas[W * H];
 static uint16_t rgb565[256];
-static bool lcd_up;
+static uint8_t rgb[256][3];
+static bool lcd_up, palette_up;
+
+/* Index 0-215 the cube, 36r + 6g + b of levels 0, 51, ..., 255; 216-255 greys 0 to 255 */
+static void palette_init(void) {
+    for (int i = 0; i < 256; i++) {
+        int r, g, b;
+        if (i < 216) r = i / 36 * 51, g = i / 6 % 6 * 51, b = i % 6 * 51;
+        else r = g = b = (i - 216) * 255 / 39;
+        rgb[i][0] = (uint8_t)r, rgb[i][1] = (uint8_t)g, rgb[i][2] = (uint8_t)b;
+        rgb565[i] = (uint16_t)(((r * 31 + 127) / 255) << 11 | ((g * 63 + 127) / 255) << 5 | ((b * 31 + 127) / 255));
+    }
+    palette_up = true;
+}
+
+static uint8_t encode(int r, int g, int b) {
+    int hi = r > g ? (r > b ? r : b) : (g > b ? g : b), lo = r < g ? (r < b ? r : b) : (g < b ? g : b);
+    if (hi - lo <= 12) return (uint8_t)(216 + ((r + g + b) * 39 + 382) / 765);
+    return (uint8_t)(36 * ((r + 25) / 51) + 6 * ((g + 25) / 51) + (b + 25) / 51);
+}
 
 static void cmd(uint8_t c, const uint8_t *data, unsigned int n) {
     gpio_put(PIN_LCD_DC, 0);
@@ -44,10 +63,7 @@ static void lcd_init(void) {
     cmd(0x21, NULL, 0);
     cmd(0x13, NULL, 0);
     cmd(0x29, NULL, 0);
-    for (int c = 0; c < 256; c++) {
-        int r = (c >> 5) & 7, g = (c >> 2) & 7, b = c & 3;
-        rgb565[c] = (uint16_t)(((r * 31 / 7) << 11) | ((g * 63 / 7) << 5) | (b * 31 / 3));
-    }
+    if (!palette_up) palette_init();
     lcd_up = true;
 }
 
@@ -56,10 +72,9 @@ static inline int clampi(int v, int lo, int hi) {
 }
 
 static inline uint8_t blend(uint8_t bg, uint8_t fg, int a /* 0..15 */) {
-    int r = (((bg >> 5) & 7) * (15 - a) + ((fg >> 5) & 7) * a + 7) / 15;
-    int g = (((bg >> 2) & 7) * (15 - a) + ((fg >> 2) & 7) * a + 7) / 15;
-    int b = ((bg & 3) * (15 - a) + (fg & 3) * a + 7) / 15;
-    return (uint8_t)((r << 5) | (g << 2) | b);
+    const uint8_t *p = rgb[bg], *q = rgb[fg];
+    return encode((p[0] * (15 - a) + q[0] * a + 7) / 15, (p[1] * (15 - a) + q[1] * a + 7) / 15,
+                  (p[2] * (15 - a) + q[2] * a + 7) / 15);
 }
 
 /* show(x0=0, y0=0, x1=240, y1=240): sends that part of the canvas */
@@ -110,6 +125,7 @@ static mp_obj_t gfx_glyph(size_t n_args, const mp_obj_t *args) {
     int cx0 = clampi(mp_obj_get_int(args[6]), 0, W), cy0 = clampi(mp_obj_get_int(args[7]), 0, H);
     int cx1 = clampi(mp_obj_get_int(args[8]), 0, W), cy1 = clampi(mp_obj_get_int(args[9]), 0, H);
     int stride = (w + 1) / 2;
+    if (!palette_up) palette_init();
     if ((size_t)(stride * h) > a.len) mp_raise_ValueError(MP_ERROR_TEXT("glyph bitmap too short"));
     const uint8_t *src = a.buf;
     for (int j = 0; j < h; j++) {
@@ -129,7 +145,7 @@ static mp_obj_t gfx_glyph(size_t n_args, const mp_obj_t *args) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(gfx_glyph_obj, 10, 10, gfx_glyph);
 
-/* blit(src, w, h, x, y): pastes w x h RGB332 bytes at (x, y), clipped */
+/* blit(src, w, h, x, y): pastes w x h palette indices at (x, y), clipped */
 static mp_obj_t gfx_blit(size_t n_args, const mp_obj_t *args) {
     (void)n_args;
     mp_buffer_info_t s;
@@ -147,6 +163,12 @@ static mp_obj_t gfx_blit(size_t n_args, const mp_obj_t *args) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(gfx_blit_obj, 5, 5, gfx_blit);
 
+/* colour(r, g, b): the palette index for that colour */
+static mp_obj_t gfx_colour(mp_obj_t r, mp_obj_t g, mp_obj_t b) {
+    return mp_obj_new_int(encode(mp_obj_get_int(r), mp_obj_get_int(g), mp_obj_get_int(b)));
+}
+static MP_DEFINE_CONST_FUN_OBJ_3(gfx_colour_obj, gfx_colour);
+
 /* canvas(): the canvas itself as a bytearray, for the odd pixel Python sets */
 static mp_obj_t gfx_canvas(void) {
     return mp_obj_new_bytearray_by_ref(sizeof(canvas), canvas);
@@ -160,6 +182,7 @@ static const mp_rom_map_elem_t globals[] = {
     { MP_ROM_QSTR(MP_QSTR_glyph), MP_ROM_PTR(&gfx_glyph_obj) },
     { MP_ROM_QSTR(MP_QSTR_blit), MP_ROM_PTR(&gfx_blit_obj) },
     { MP_ROM_QSTR(MP_QSTR_canvas), MP_ROM_PTR(&gfx_canvas_obj) },
+    { MP_ROM_QSTR(MP_QSTR_colour), MP_ROM_PTR(&gfx_colour_obj) },
     { MP_ROM_QSTR(MP_QSTR_WIDTH), MP_ROM_INT(W) },
     { MP_ROM_QSTR(MP_QSTR_HEIGHT), MP_ROM_INT(H) },
 };

@@ -24,3 +24,6 @@ def _str_args(f):
 
 for _n in ("join", "exists", "isdir", "isfile", "dirname", "basename", "abspath", "split"):
     setattr(path, _n, _str_args(getattr(path, _n)))
+
+
+environ = {}  # MicroPython has no environment; Settings writes LANGUAGE here for gettext

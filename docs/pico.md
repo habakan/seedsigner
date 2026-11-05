@@ -124,6 +124,24 @@ Pointed at a laptop screen cycling bitwasm-signer's `own_p2wpkh_2in_nwu` as 21 U
 each), it completed in 42 s, reading 40 of 108 frames (0.39 s a frame), and signed it into the bytes
 CPython does. Synthetic frames read in 0.33 s (SeedQR) and 0.44 s (UR, v11).
 
+## The screen
+
+SeedSigner's own screens draw on the Pico's ST7789 through a PIL of the Pico's (`pico/lib/PIL`):
+
+- The canvas is `_gfx`'s 240x240 framebuffer, one byte a pixel (a 6x6x6 colour cube and 40 greys, since
+  SeedSigner's palette is greys), outside MicroPython's heap. Every other image is a list of drawing
+  operations, replayed when pasted, so a text area or a button costs no pixel buffer.
+- Fonts are bitmaps made at build time (`pico/tools/make_fonts.py`) for the fonts, sizes and characters
+  rendering every screen uses (`pico/tools/record_fonts.py`, `pico/fonts_used.json`), 608 KB frozen. Their
+  getbbox matches PIL's on all 5904 calls checked (`pico/tests/check_fonts.py`), so layouts come out the
+  same: the main menu differs from PIL's only at antialiased edges (`pico/tests/render_screen.py`).
+- The firmware takes 3 MB of the flash for this, leaving 1 MB of filesystem.
+- `RPi.GPIO` is a shim mapping the Pi's header pins to bitwasm-signer-pico's joystick and keys, so
+  `hardware/buttons.py` runs unchanged; the current two buttons are its down and press.
+
+`pico/tests/screen.py` draws the main menu on the device in 0.47 s, leaving 106 KB of heap. English only
+for now; QR display (`helpers/qr.py`) is a stub until it draws with qrcodegen in C.
+
 ## What the Pico build gives up
 
 Whatever `signer.wasm` does not do: Electrum seeds, non-English wordlists, legacy P2PKH, custom
