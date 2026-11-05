@@ -85,7 +85,7 @@ class Image:
         if len(self.boxes) != len(self.ops):
             self.boxes = [box(o) for o in self.ops]
         cover = opaque(op)
-        if cover or op[0] == "rect" and op[6] is not None or op[0] == "line":
+        if cover or op[0] == "rect" and op[6] is not None or op[0] in ("line", "arc"):
             keep = [i for i, (o, b) in enumerate(zip(self.ops, self.boxes)) if not hidden(o, b, op, cover)]
             if len(keep) < len(self.ops):
                 self.ops, self.boxes = [self.ops[i] for i in keep], [self.boxes[i] for i in keep]
@@ -192,6 +192,8 @@ def hidden(old, b, new, cover):
         return True  # an outline over one no wider: a warning screen's pulsing edges
     if old[0] == "line" == new[0] and old[1] == new[1] and new[3] >= old[3]:
         return True  # the same segments again, as wide or wider: a PSBT chart's animated pulses
+    if old[0] == "arc" == new[0] and old[1:7] == new[1:7] and new[8] >= old[8]:
+        return True  # the same arc again: the loading spinner erasing the arcs it drew two steps back
     return b is not None and any(c[0] <= b[0] and c[1] <= b[1] and b[2] <= c[2] and b[3] <= c[3] for c in cover)
 
 

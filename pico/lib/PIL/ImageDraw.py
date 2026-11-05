@@ -177,7 +177,9 @@ class ImageDraw:
 
     def arc(self, xy, start, end, fill=None, width=1):
         x0, y0, x1, y1 = _box(xy)
-        self.im.add(("arc", x0, y0, x1, y1, start, end, self._c(fill), width))
+        # Angles a turn apart are one arc, kept as one so add() can drop it (the loading spinner's grow forever)
+        s = start % 360
+        self.im.add(("arc", x0, y0, x1, y1, s, s + end - start, self._c(fill), width))
 
     def polygon(self, xy, fill=None, outline=None, width=1):
         pts = _points(xy)
