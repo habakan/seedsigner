@@ -140,7 +140,15 @@ SeedSigner's own screens draw on the Pico's ST7789 through a PIL of the Pico's (
   `hardware/buttons.py` runs unchanged; the current two buttons are its down and press.
 
 `pico/tests/screen.py` draws the main menu on the device in 0.47 s, leaving 106 KB of heap. English only
-for now; QR display (`helpers/qr.py`) is a stub until it draws with qrcodegen in C.
+for now.
+
+QR codes (`pico/lib/seedsigner/helpers/qr.py`) are encoded by qrcodegen in `_gfx` (level L, smallest
+version, no ECC boost, as qrcode and qrencode make them) and drawn straight onto the canvas when pasted, in
+SeedSigner's three styles, with finder patterns and SeedQR's alignment pattern square. Through the shim on
+CPython every style reads back with zbarimg, and with the same matrix differs from SeedSigner's picture
+only at resampled edges (`pico/tests/check_qr.py`); qrcode scores masks its own way, so some codes (a
+CompactSeedQR among them) get another, equally valid mask. On the device a SeedQR shows in 88 ms and an
+animated UR PSBT frame in 118-148 ms (`pico/tests/qr_show.py`), plus the screen's own 167 ms hold.
 
 `main.py` (`make device-install`) runs `Controller.start()` itself: the splash screen, then the main menu
 driven by the buttons. Getting there took:

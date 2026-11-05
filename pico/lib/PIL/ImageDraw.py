@@ -99,6 +99,9 @@ def replay(ops, dx, dy, clip):
             for gx, gy, w, h, off in font.glyphs(text, x, y, anchor):
                 _gfx.glyph(dx + gx, dy + gy, w, h, bits[off:off + ((w + 1) // 2) * h], c,
                            clip[0], clip[1], clip[2], clip[3])
+        elif k == "qr":
+            _, code, border, x, y, w, h, fg, bg, style = op
+            _gfx.qr(code, border, dx + x, dy + y, w, h, fg, bg, style, clip[0], clip[1], clip[2], clip[3])
         elif k == "rle":
             _, data, w = op
             _gfx.restore(data, w, dx, dy, clip[0], clip[1], clip[2], clip[3])
@@ -126,6 +129,9 @@ def _scaled(ops, sx, sy):
         elif op[0] == "img":
             _, sub, x, y, w, h = op
             out.append(("img", _scaled(sub, sx, sy), int(x * sx), int(y * sy), int(w * sx), int(h * sy)))
+        elif op[0] == "qr":
+            _, code, border, x, y, w, h, fg, bg, style = op
+            out.append(("qr", code, border, int(x * sx), int(y * sy), int(w * sx), int(h * sy), fg, bg, style))
         elif op[0] == "text":
             _, x, y, text, font, c, anchor = op
             out.append(("text", int(x * sx + 0.5), int(y * sy + 0.5), text,

@@ -4,6 +4,7 @@
 #include "py/obj.h"
 #include "py/objarray.h"
 #include "py/runtime.h"
+#include "qrcodegen.h"
 #include "board_pins.h"
 #include "hardware/gpio.h"
 #include "hardware/spi.h"
@@ -219,6 +220,86 @@ static mp_obj_t gfx_restore(size_t n_args, const mp_obj_t *args) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(gfx_restore_obj, 8, 8, gfx_restore);
 
+/* Static, not on the heap: three of qrcodegen's largest buffers are 11.7 KB the fragmented heap may lack */
+static uint8_t qr_text[qrcodegen_BUFFER_LEN_MAX + 1], qr_temp[qrcodegen_BUFFER_LEN_MAX], qr_out[qrcodegen_BUFFER_LEN_MAX];
+
+/* qr_encode(data): a str (numeric, alphanumeric or byte mode, whichever fits it) or bytes as a QR code at
+ * level L in the smallest version, as SeedSigner's qrcode and qrencode make it; qrcodegen's buffer, trimmed */
+static mp_obj_t gfx_qr_encode(mp_obj_t data) {
+    bool ok;
+    if (mp_obj_is_str(data)) {
+        size_t len;
+        const char *s = mp_obj_str_get_data(data, &len);
+        if (len > qrcodegen_BUFFER_LEN_MAX) mp_raise_ValueError(MP_ERROR_TEXT("too long for a QR code"));
+        memcpy(qr_text, s, len), qr_text[len] = 0;
+        ok = qrcodegen_encodeText((const char *)qr_text, qr_temp, qr_out, qrcodegen_Ecc_LOW, qrcodegen_VERSION_MIN,
+                                  qrcodegen_VERSION_MAX, qrcodegen_Mask_AUTO, false);
+    } else {
+        mp_buffer_info_t b;
+        mp_get_buffer_raise(data, &b, MP_BUFFER_READ);
+        if (b.len > qrcodegen_BUFFER_LEN_MAX) mp_raise_ValueError(MP_ERROR_TEXT("too long for a QR code"));
+        memcpy(qr_temp, b.buf, b.len);
+        ok = qrcodegen_encodeBinary(qr_temp, b.len, qr_out, qrcodegen_Ecc_LOW, qrcodegen_VERSION_MIN,
+                                    qrcodegen_VERSION_MAX, qrcodegen_Mask_AUTO, false);
+    }
+    if (!ok) mp_raise_ValueError(MP_ERROR_TEXT("too long for a QR code"));
+    int n = qrcodegen_getSize(qr_out);
+    return mp_obj_new_bytes(qr_out, 1 + ((size_t)n * n + 7) / 8);
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(gfx_qr_encode_obj, gfx_qr_encode);
+
+/* A finder pattern, or for SeedQR's 25x25 and 29x29 the one alignment pattern: square in every style, as
+ * qrcode's eye drawer and SeedSigner's patch over the alignment pattern have them */
+static bool qr_square(int n, int r, int c) {
+    if ((r < 7 && c < 7) || (r < 7 && c >= n - 7) || (r >= n - 7 && c < 7)) return true;
+    return n > 21 && r >= n - 9 && r < n - 4 && c >= n - 9 && c < n - 4;
+}
+
+/* qr(code, border, x, y, w, h, fg, bg, style, cx0, cy0, cx1, cy1): qr_encode's code with `border` light
+ * modules each side, stretched over w x h at (x, y); style 1 squares, 2 dots, 3 gapped squares */
+static mp_obj_t gfx_qr(size_t n_args, const mp_obj_t *args) {
+    (void)n_args;
+    mp_buffer_info_t q;
+    mp_get_buffer_raise(args[0], &q, MP_BUFFER_READ);
+    const uint8_t *code = q.buf;
+    int n = code[0], border = mp_obj_get_int(args[1]);
+    if (q.len < 1 + ((size_t)n * n + 7) / 8) mp_raise_ValueError(MP_ERROR_TEXT("not a QR code"));
+    int x = mp_obj_get_int(args[2]), y = mp_obj_get_int(args[3]);
+    int w = mp_obj_get_int(args[4]), h = mp_obj_get_int(args[5]);
+    uint8_t fg = mp_obj_get_int(args[6]), bg = mp_obj_get_int(args[7]);
+    int style = mp_obj_get_int(args[8]);
+    int cx0 = clampi(mp_obj_get_int(args[9]), 0, W), cy0 = clampi(mp_obj_get_int(args[10]), 0, H);
+    int cx1 = clampi(mp_obj_get_int(args[11]), 0, W), cy1 = clampi(mp_obj_get_int(args[12]), 0, H);
+    int N = n + 2 * border;
+    if (w <= 0 || h <= 0) return mp_const_none;
+    cx0 = x > cx0 ? x : cx0, cy0 = y > cy0 ? y : cy0;
+    cx1 = x + w < cx1 ? x + w : cx1, cy1 = y + h < cy1 ? y + h : cy1;
+    for (int py = cy0; py < cy1; py++) {
+        /* Module of the pixel's centre, as PIL's nearest-neighbour resize of SeedSigner's picture picks it */
+        int v = py - y, mr = (2 * v + 1) * N / (2 * h);
+        int top = (2 * mr * h + N - 1) / (2 * N), cs_y = (2 * (mr + 1) * h + N - 1) / (2 * N) - top, fy = v - top;
+        for (int px = cx0; px < cx1; px++) {
+            int u = px - x, mc = (2 * u + 1) * N / (2 * w);
+            int r = mr - border, c = mc - border;
+            bool dark = qrcodegen_getModule(code, c, r);
+            if (dark && style != 1 && !qr_square(n, r, c)) {
+                int left = (2 * mc * w + N - 1) / (2 * N), cs_x = (2 * (mc + 1) * w + N - 1) / (2 * N) - left;
+                int fx = u - left;
+                if (style == 2) {
+                    int ax = 2 * fx + 1 - cs_x, ay = 2 * fy + 1 - cs_y;
+                    dark = ax * ax + ay * ay <= cs_x * cs_y;
+                } else {
+                    int dx = (cs_x + 5) / 10, dy = (cs_y + 5) / 10;
+                    dark = fx >= dx && fx < cs_x - dx && fy >= dy && fy < cs_y - dy;
+                }
+            }
+            canvas[py * W + px] = dark ? fg : bg;
+        }
+    }
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(gfx_qr_obj, 13, 13, gfx_qr);
+
 /* colour(r, g, b): the palette index for that colour */
 static mp_obj_t gfx_colour(mp_obj_t r, mp_obj_t g, mp_obj_t b) {
     return mp_obj_new_int(encode(mp_obj_get_int(r), mp_obj_get_int(g), mp_obj_get_int(b)));
@@ -240,6 +321,8 @@ static const mp_rom_map_elem_t globals[] = {
     { MP_ROM_QSTR(MP_QSTR_canvas), MP_ROM_PTR(&gfx_canvas_obj) },
     { MP_ROM_QSTR(MP_QSTR_colour), MP_ROM_PTR(&gfx_colour_obj) },
     { MP_ROM_QSTR(MP_QSTR_save), MP_ROM_PTR(&gfx_save_obj) },
+    { MP_ROM_QSTR(MP_QSTR_qr_encode), MP_ROM_PTR(&gfx_qr_encode_obj) },
+    { MP_ROM_QSTR(MP_QSTR_qr), MP_ROM_PTR(&gfx_qr_obj) },
     { MP_ROM_QSTR(MP_QSTR_restore), MP_ROM_PTR(&gfx_restore_obj) },
     { MP_ROM_QSTR(MP_QSTR_WIDTH), MP_ROM_INT(W) },
     { MP_ROM_QSTR(MP_QSTR_HEIGHT), MP_ROM_INT(H) },

@@ -94,6 +94,60 @@ def restore(data, w, x, y, cx0, cy0, cx1, cy1):
             px, py = 0, py + 1
 
 
+def qr_encode(data):
+    import pathlib
+    import sys
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "bitwasm-signer-pico/third_party/QR-Code-generator/python"))
+    from qrcodegen import QrCode, QrSegment
+    segs = QrSegment.make_segments(data) if isinstance(data, str) else [QrSegment.make_bytes(bytes(data))]
+    q = QrCode.encode_segments(segs, QrCode.Ecc.LOW, boostecl=False)  # as modgfx.c
+    n = q.get_size()
+    bits = bytearray(1 + (n * n + 7) // 8)
+    bits[0] = n
+    for i in range(n * n):
+        if q.get_module(i % n, i // n):
+            bits[1 + (i >> 3)] |= 1 << (i & 7)
+    return bytes(bits)
+
+
+def _qr_square(n, r, c):
+    if (r < 7 and c < 7) or (r < 7 and c >= n - 7) or (r >= n - 7 and c < 7):
+        return True
+    return n > 21 and n - 9 <= r < n - 4 and n - 9 <= c < n - 4
+
+
+def qr(code, border, x, y, w, h, fg, bg, style, cx0, cy0, cx1, cy1):
+    n, N = code[0], code[0] + 2 * border
+
+    def module(r, c):
+        if not (0 <= r < n and 0 <= c < n):
+            return False
+        i = r * n + c
+        return (code[1 + (i >> 3)] >> (i & 7)) & 1
+
+    cx0, cy0, cx1, cy1 = max(0, cx0, x), max(0, cy0, y), min(WIDTH, cx1, x + w), min(HEIGHT, cy1, y + h)
+    for py in range(cy0, cy1):
+        v = py - y
+        mr = (2 * v + 1) * N // (2 * h)
+        top = (2 * mr * h + N - 1) // (2 * N)
+        cs_y, fy = (2 * (mr + 1) * h + N - 1) // (2 * N) - top, v - top
+        for px in range(cx0, cx1):
+            u = px - x
+            mc = (2 * u + 1) * N // (2 * w)
+            r, c = mr - border, mc - border
+            dark = module(r, c)
+            if dark and style != 1 and not _qr_square(n, r, c):
+                left = (2 * mc * w + N - 1) // (2 * N)
+                cs_x, fx = (2 * (mc + 1) * w + N - 1) // (2 * N) - left, u - left
+                if style == 2:
+                    ax, ay = 2 * fx + 1 - cs_x, 2 * fy + 1 - cs_y
+                    dark = ax * ax + ay * ay <= cs_x * cs_y
+                else:
+                    dx, dy = (cs_x + 5) // 10, (cs_y + 5) // 10
+                    dark = dx <= fx < cs_x - dx and dy <= fy < cs_y - dy
+            canvas_bytes[py * WIDTH + px] = fg if dark else bg
+
+
 def show(*args):
     global shows
     shows += 1
