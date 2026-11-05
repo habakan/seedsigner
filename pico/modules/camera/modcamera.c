@@ -23,13 +23,18 @@ void wamr_pool_return(void);
 static uint8_t *memory, *output;
 static void *state;
 static size_t memory_size;
-static bool camera_up;
+static bool camera_up, framed;
+
+/* The last frame captured, CAMERA_W x CAMERA_H greys, for _gfx's preview; NULL when there is none */
+const uint8_t *camera_frame(void) {
+    return memory && framed ? memory : NULL;
+}
 
 static void wipe_all(void) {
     if (!memory) return;
     volatile uint8_t *p = memory;
     for (size_t i = 0; i < memory_size; i++) p[i] = 0;
-    memory = output = NULL, state = NULL;
+    memory = output = NULL, state = NULL, framed = false;
     wamr_pool_return();
 }
 
@@ -94,6 +99,7 @@ static mp_obj_t camera_read(size_t n_args, const mp_obj_t *args) {
         camera_up = true;
     }
     if (!camera_capture(memory, 1000)) mp_raise_OSError(MP_ETIMEDOUT);
+    framed = true;
     return decode_frame(n_args ? mp_obj_get_int(args[0]) : 0);
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(camera_read_obj, 0, 1, camera_read);

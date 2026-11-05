@@ -162,7 +162,7 @@ def box(op):
     if k == "line":
         xs, ys, w = [p[0] for p in op[1]], [p[1] for p in op[1]], op[3]
         return min(xs) - w, min(ys) - w, max(xs) + w, max(ys) + w
-    if k == "pix":
+    if k in ("pix", "cam"):
         return 0, 0, op[2] - 1, op[3] - 1
     if k == "qr":
         return op[3], op[4], op[3] + op[5] - 1, op[4] + op[6] - 1
@@ -179,7 +179,7 @@ def opaque(op):
     if k == "rrect" and op[6] is not None:
         x0, y0, x1, y1, r = op[1:6]
         return [(x0 + r, y0, x1 - r, y1), (x0, y0 + r, x1, y1 - r)]
-    if k in ("pix", "qr") or (k == "img" and any(covers(o, op[4], op[5]) for o in op[1])):
+    if k in ("pix", "cam", "qr") or (k == "img" and any(covers(o, op[4], op[5]) for o in op[1])):
         return [box(op)]
     return []
 
@@ -200,7 +200,7 @@ def covers(op, w, h):
     k = op[0]
     if k == "rect":
         return op[5] is not None and op[1] <= 0 and op[2] <= 0 and op[3] >= w - 1 and op[4] >= h - 1
-    if k == "pix":
+    if k in ("pix", "cam"):
         return op[2] >= w and op[3] >= h
     if k == "qr":
         return op[3] <= 0 and op[4] <= 0 and op[3] + op[5] >= w and op[4] + op[6] >= h

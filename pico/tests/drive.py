@@ -58,7 +58,7 @@ def serve(port, path, log):
         with lock:
             del buf[:]
         s.write(b"s")
-        end, data = time.time() + 15, b""
+        end, data = time.time() + 60, b""  # a camera frame is ~130 KB of rows at 115200 baud
         while time.time() < end:
             with lock:
                 if b"FB>>" in buf:

@@ -64,6 +64,8 @@ def replay(ops, dx, dy, clip):
         elif k == "pix":
             _, pixels, w, h = op
             _gfx.blit(pixels, w, h, dx, dy, clip[0], clip[1], clip[2], clip[3])
+        elif k == "cam":
+            _gfx.camera(dx, dy, clip[0], clip[1], clip[2], clip[3])
         elif k == "img":
             _, sub, x, y, w, h = op
             c = _clip(clip, (dx + x, dy + y, dx + x + w, dy + y + h))

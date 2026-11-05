@@ -184,7 +184,8 @@ RAM decided most of the way there:
   93 ms, moving its selection from 326 to 80 ms.
 - Pico-only choices live in `pico/lib/pico_boot.py`, which main.py imports first, not in SeedSigner's
   source: the preload thread only opens the seed storage, DecodeQR takes the camera's bytes, and ScanScreen
-  draws its progress between reads rather than in core1's thread. There is no camera preview yet.
+  draws its preview and progress between reads rather than in core1's thread. The preview is the camera's
+  last frame, drawn by `_gfx` from the camera's memory in greys.
 
 ## A regtest spend
 

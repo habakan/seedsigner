@@ -307,6 +307,26 @@ static mp_obj_t gfx_blit(size_t n_args, const mp_obj_t *args) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(gfx_blit_obj, 9, 9, gfx_blit);
 
+const uint8_t *camera_frame(void);
+
+/* camera(x, y, cx0, cy0, cx1, cy1): the middle 240 x 240 of the camera's last 320 x 240 frame at (x, y), in
+ * the greys, clipped to the box; black without a frame. The frame stays in the camera's memory */
+static mp_obj_t gfx_camera(size_t n_args, const mp_obj_t *args) {
+    (void)n_args;
+    int x = mp_obj_get_int(args[0]), y = mp_obj_get_int(args[1]);
+    int cx0 = clampi(mp_obj_get_int(args[2]), 0, W), cy0 = CLIP_Y(args[3]);
+    int cx1 = clampi(mp_obj_get_int(args[4]), 0, W), cy1 = CLIP_Y(args[5]);
+    const uint8_t *f = camera_frame();
+    for (int py = cy0 > y ? cy0 : y; py < cy1 && py < y + 240; py++) {
+        uint8_t *row = PX(0, py);
+        const uint8_t *src = f ? f + (size_t)(py - y) * 320 + 40 - x : NULL;
+        for (int px = cx0 > x ? cx0 : x; px < cx1 && px < x + 240; px++)
+            row[px] = src ? (uint8_t)(216 + (src[px] * 39 + 127) / 255) : 216;
+    }
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(gfx_camera_obj, 6, 6, gfx_camera);
+
 /* save(x0, y0, x1, y1): that part of the band run-length encoded, (count, index) pairs row by row: a
  * screenshot, band by band, for pico/tests/drive.py */
 static mp_obj_t gfx_save(size_t n_args, const mp_obj_t *args) {
@@ -431,6 +451,7 @@ static const mp_rom_map_elem_t globals[] = {
     { MP_ROM_QSTR(MP_QSTR_fill), MP_ROM_PTR(&gfx_fill_obj) },
     { MP_ROM_QSTR(MP_QSTR_glyph), MP_ROM_PTR(&gfx_glyph_obj) },
     { MP_ROM_QSTR(MP_QSTR_blit), MP_ROM_PTR(&gfx_blit_obj) },
+    { MP_ROM_QSTR(MP_QSTR_camera), MP_ROM_PTR(&gfx_camera_obj) },
     { MP_ROM_QSTR(MP_QSTR_band), MP_ROM_PTR(&gfx_band_obj) },
     { MP_ROM_QSTR(MP_QSTR_shape), MP_ROM_PTR(&gfx_shape_obj) },
     { MP_ROM_QSTR(MP_QSTR_glyphs), MP_ROM_PTR(&gfx_glyphs_obj) },

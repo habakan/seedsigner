@@ -17,6 +17,9 @@ _extract_qr_data = DecodeQR.extract_qr_data
 
 def _bytes_or_frame(image, is_binary=False):
     # The Pico's camera reads the QR code itself (pico/lib/seedsigner/hardware/camera.py) and hands over its bytes
+    from seedsigner.hardware.camera import NO_CODE
+    if image is NO_CODE:
+        return None
     if isinstance(image, (bytes, bytearray)):
         return bytes(image)
     return _extract_qr_data(image, is_binary)

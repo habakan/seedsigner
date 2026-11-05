@@ -72,6 +72,10 @@ def blit(src, w, h, x, y, cx0, cy0, cx1, cy1):
                 canvas_bytes[py * WIDTH + x + i0:py * WIDTH + x + i1] = src[j * w + i0:j * w + i1]
 
 
+def camera(x, y, cx0, cy0, cx1, cy1):
+    fill(max(cx0, x), max(cy0, y), min(cx1, x + 240), min(cy1, y + 240), 216)  # no sensor: black, as without a frame
+
+
 def save(x0, y0, x1, y1):
     x0, y0, x1, y1 = max(0, x0), max(_band[0], y0), min(WIDTH, x1), min(_band[1], y1)
     out = bytearray()
