@@ -159,6 +159,114 @@ static mp_obj_t gfx_glyph(size_t n_args, const mp_obj_t *args) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(gfx_glyph_obj, 10, 10, gfx_glyph);
 
+/* Rounded rectangles and ellipses, a row at a time as pico/lib/PIL/ImageDraw.py had them in Python: only the
+ * rows in the clip are worked out, where Python made every row for every band */
+#include <math.h>
+typedef struct { int x0, y0, x1, y1, r; bool ellipse; } shape_t;
+
+/* Row y's span of the shape, inclusive; false where the shape has no such row */
+static bool shape_row(const shape_t *sh, int y, int *a, int *b) {
+    if (y < sh->y0 || y > sh->y1 || sh->x1 < sh->x0) return false;
+    if (sh->ellipse) {
+        double cx = (sh->x0 + sh->x1) / 2.0, cy = (sh->y0 + sh->y1) / 2.0;
+        double rx = (sh->x1 - sh->x0 + 1) / 2.0, ry = (sh->y1 - sh->y0 + 1) / 2.0;
+        double t = ry ? (y + 0.5 - (cy + 0.5)) / ry : 0;
+        if (t * t > 1) return false;
+        double half = rx * sqrt(1 - t * t);
+        *a = (int)(cx + 0.5 - half + 0.5), *b = (int)(cx + 0.5 + half - 0.5);
+        return true;
+    }
+    int k = y - sh->y0 < sh->y1 - y ? y - sh->y0 : sh->y1 - y, i = 0;
+    if (k < sh->r) {
+        double d = sh->r - k - 0.5;
+        i = d * d < (double)sh->r * sh->r ? sh->r - (int)(sqrt((double)sh->r * sh->r - d * d) + 0.5) : sh->r;
+    }
+    *a = sh->x0 + i, *b = sh->x1 - i;
+    return true;
+}
+
+static void span(int y, int a, int b, uint8_t c, int cx0, int cx1) {
+    a = a < cx0 ? cx0 : a, b = b >= cx1 ? cx1 - 1 : b;
+    if (b >= a) memset(PX(a, y), c, (size_t)(b - a + 1));
+}
+
+static int clamp_r(int r, int x0, int y0, int x1, int y1) {
+    int m = (x1 - x0 + 1) / 2 < (y1 - y0 + 1) / 2 ? (x1 - x0 + 1) / 2 : (y1 - y0 + 1) / 2;
+    return r < 0 ? 0 : r > m ? m : r;
+}
+
+/* shape(ellipse, x0, y0, x1, y1, r, fill, outline, width, dx, dy, cx0, cy0, cx1, cy1): fill and outline are
+ * palette indices or -1; the outline is the shape less the one inset by width */
+static mp_obj_t gfx_shape(size_t n_args, const mp_obj_t *args) {
+    (void)n_args;
+    bool ell = mp_obj_is_true(args[0]);
+    int x0 = mp_obj_get_int(args[1]), y0 = mp_obj_get_int(args[2]), x1 = mp_obj_get_int(args[3]);
+    int y1 = mp_obj_get_int(args[4]), r = mp_obj_get_int(args[5]);
+    int fill = mp_obj_get_int(args[6]), outline = mp_obj_get_int(args[7]), w = mp_obj_get_int(args[8]);
+    int dx = mp_obj_get_int(args[9]), dy = mp_obj_get_int(args[10]);
+    int cx0 = clampi(mp_obj_get_int(args[11]), 0, W), cy0 = CLIP_Y(args[12]);
+    int cx1 = clampi(mp_obj_get_int(args[13]), 0, W), cy1 = CLIP_Y(args[14]);
+    shape_t outer = {x0, y0, x1, y1, clamp_r(r, x0, y0, x1, y1), ell};
+    shape_t inner = {x0 + w, y0 + w, x1 - w, y1 - w, 0, ell};
+    inner.r = clamp_r(r - w > 0 ? r - w : 0, inner.x0, inner.y0, inner.x1, inner.y1);
+    bool ring = outline >= 0 && w > 0;
+    for (int py = cy0; py < cy1; py++) {
+        int y = py - dy, a, b, ia, ib;
+        if (!shape_row(&outer, y, &a, &b)) continue;
+        if (!ring) {
+            if (fill >= 0) span(py, dx + a, dx + b, (uint8_t)fill, cx0, cx1);
+            continue;
+        }
+        if (shape_row(&inner, y, &ia, &ib) && ia <= ib) {
+            span(py, dx + a, dx + ia - 1, (uint8_t)outline, cx0, cx1);
+            span(py, dx + ib + 1, dx + b, (uint8_t)outline, cx0, cx1);
+            if (fill >= 0) span(py, dx + ia, dx + ib, (uint8_t)fill, cx0, cx1);
+        } else {
+            span(py, dx + a, dx + b, (uint8_t)outline, cx0, cx1);
+        }
+    }
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(gfx_shape_obj, 15, 15, gfx_shape);
+
+/* glyphs(placed, bitmaps, c, dx, dy, cx0, cy0, cx1, cy1): a line of text, as ImageDraw placed its glyphs when it
+ * recorded it, `<hhBBI` (x, y, w, h, offset into bitmaps) each, blended like glyph() */
+static mp_obj_t gfx_glyphs(size_t n_args, const mp_obj_t *args) {
+    (void)n_args;
+    mp_buffer_info_t pl, bm;
+    mp_get_buffer_raise(args[0], &pl, MP_BUFFER_READ);
+    mp_get_buffer_raise(args[1], &bm, MP_BUFFER_READ);
+    uint8_t c = (uint8_t)mp_obj_get_int(args[2]);
+    int dx = mp_obj_get_int(args[3]), dy = mp_obj_get_int(args[4]);
+    int cx0 = clampi(mp_obj_get_int(args[5]), 0, W), cy0 = CLIP_Y(args[6]);
+    int cx1 = clampi(mp_obj_get_int(args[7]), 0, W), cy1 = CLIP_Y(args[8]);
+    if (!palette_up) palette_init();
+    const uint8_t *p = pl.buf, *bits = bm.buf;
+    for (size_t k = 0; k + 10 <= pl.len; k += 10) {
+        int x = dx + (int16_t)(p[k] | p[k + 1] << 8), y = dy + (int16_t)(p[k + 2] | p[k + 3] << 8);
+        int w = p[k + 4], h = p[k + 5], stride = (w + 1) / 2;
+        uint32_t off = p[k + 6] | p[k + 7] << 8 | p[k + 8] << 16 | (uint32_t)p[k + 9] << 24;
+        if (y >= cy1 || y + h <= cy0 || x >= cx1 || x + w <= cx0) continue;
+        if (off + (size_t)stride * h > bm.len) mp_raise_ValueError(MP_ERROR_TEXT("glyph bitmap too short"));
+        const uint8_t *src = bits + off;
+        for (int j = 0; j < h; j++) {
+            int py = y + j;
+            if (py < cy0 || py >= cy1) continue;
+            for (int i = 0; i < w; i++) {
+                int px = x + i;
+                if (px < cx0 || px >= cx1) continue;
+                uint8_t v = src[j * stride + i / 2];
+                int al = (i & 1) ? (v & 15) : (v >> 4);
+                if (!al) continue;
+                uint8_t *d = PX(px, py);
+                *d = al == 15 ? c : blend(*d, c, al);
+            }
+        }
+    }
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(gfx_glyphs_obj, 9, 9, gfx_glyphs);
+
 /* blit(src, w, h, x, y, cx0, cy0, cx1, cy1): pastes w x h palette indices at (x, y), clipped to the box */
 static mp_obj_t gfx_blit(size_t n_args, const mp_obj_t *args) {
     (void)n_args;
@@ -304,6 +412,8 @@ static const mp_rom_map_elem_t globals[] = {
     { MP_ROM_QSTR(MP_QSTR_glyph), MP_ROM_PTR(&gfx_glyph_obj) },
     { MP_ROM_QSTR(MP_QSTR_blit), MP_ROM_PTR(&gfx_blit_obj) },
     { MP_ROM_QSTR(MP_QSTR_band), MP_ROM_PTR(&gfx_band_obj) },
+    { MP_ROM_QSTR(MP_QSTR_shape), MP_ROM_PTR(&gfx_shape_obj) },
+    { MP_ROM_QSTR(MP_QSTR_glyphs), MP_ROM_PTR(&gfx_glyphs_obj) },
     { MP_ROM_QSTR(MP_QSTR_colour), MP_ROM_PTR(&gfx_colour_obj) },
     { MP_ROM_QSTR(MP_QSTR_save), MP_ROM_PTR(&gfx_save_obj) },
     { MP_ROM_QSTR(MP_QSTR_qr_encode), MP_ROM_PTR(&gfx_qr_encode_obj) },

@@ -171,6 +171,7 @@ RAM decided most of the way there:
 | GC heap at first (WAMR's pool 160, a 57.6 KB canvas) | 168 |
 | screens drawn a 40-row band at a time, no canvas | 223 |
 | parser.wasm built without its UR decoder (bitwasm-signer), pool 116 KB | 275 |
+| its stack 4 KB (1.7 KB used at most), pool 104 KB; C stack 20 KB, core1's 16 KB | 262 |
 
 - The canvas is a list of drawing operations; an opaque one drops what it hides, or a keyboard's redraws
   pile up. A View's finished Screen is let go, or the back stack holds one per seed word.
@@ -178,6 +179,9 @@ RAM decided most of the way there:
 - MicroPython is patched (`pico/patches/micropython-rp2.patch`): a GIL, as SeedSigner's threads assume
   CPython's; one static 16 KB core1 stack, as a heap one cannot be found and its MemoryError left core1
   claimed; a 20 KB C stack, as the camera's QR reader is called 20-odd Python calls deep.
+- Drawing: rounded rectangles, ellipses and text are drawn in C (a text op places its glyphs once, when
+  recorded), and showing the canvas again sends only the box drawn on since. The main menu went from 237 to
+  93 ms, moving its selection from 326 to 80 ms.
 - No thread runs beside the camera: ScanScreen draws its progress between reads, and the review's
   animated chart is static. There is no camera preview yet.
 

@@ -7,7 +7,7 @@
 #include "wasm_export.h"
 
 #ifndef WAMR_POOL_KB
-#define WAMR_POOL_KB 116 /* parser-no-ur.wasm peaks at 107 KB, its buffers being fixed; the camera's frame fits too */
+#define WAMR_POOL_KB 104 /* parser-no-ur.wasm peaks at 95 KB, its buffers being fixed; the camera fits too */
 #endif
 static char pool[WAMR_POOL_KB * 1024];
 /* The classic interpreter rewrites the module's bytes and keeps pointers into them: a static copy, as one

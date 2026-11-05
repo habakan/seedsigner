@@ -56,6 +56,7 @@ class Image:
         self.mode = mode
         self.size = (int(size[0]), int(size[1]))
         self.ops, self.boxes = [], []  # boxes: each op's extent, kept by add() for its pruning
+        self.dirty = None  # what add() changed since the display last showed this image, inclusive
         bg = rgba(color, mode) if color is not None else (rgba(0, mode) if mode != "RGBA" else None)
         if bg is not None and bg[3]:
             self.ops.append(("rect", 0, 0, self.size[0] - 1, self.size[1] - 1, c332(bg), None, 1))
@@ -71,9 +72,13 @@ class Image:
     def add(self, op):
         # What an opaque op hides needn't be kept: the canvas is drawn over for every screen, and parts of
         # it (a keyboard's keys) for every button press, which would otherwise pile up until the heap ran out
+        whole = (0, 0, self.size[0] - 1, self.size[1] - 1)
         if covers(op, self.size[0], self.size[1]):
-            self.ops, self.boxes = [op], [box(op)]
+            self.ops, self.boxes, self.dirty = [op], [box(op)], whole
             return
+        b = box(op) or whole
+        d = self.dirty
+        self.dirty = b if d is None else (min(d[0], b[0]), min(d[1], b[1]), max(d[2], b[2]), max(d[3], b[3]))
         if len(self.boxes) != len(self.ops):
             self.boxes = [box(o) for o in self.ops]
         cover = opaque(op)
@@ -145,7 +150,7 @@ def box(op):
     if k in ("rect", "rrect", "ellipse", "arc"):
         return op[1], op[2], op[3], op[4]
     if k == "text":
-        _, x, y, text, font, c, anchor = op
+        _, x, y, text, font, c, anchor, placed = op
         b = font.getbbox(text, anchor=anchor)
         return x + b[0], y + b[1], x + b[2], y + b[3]
     if k == "line":

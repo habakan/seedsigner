@@ -141,6 +141,66 @@ def qr(code, border, x, y, w, h, fg, bg, style, cx0, cy0, cx1, cy1):
             canvas_bytes[py * WIDTH + px] = fg if dark else bg
 
 
+def _shape_row(ell, x0, y0, x1, y1, r, y):
+    if y < y0 or y > y1 or x1 < x0:
+        return None
+    if ell:
+        cx, cy, rx, ry = (x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0 + 1) / 2, (y1 - y0 + 1) / 2
+        t = (y + 0.5 - (cy + 0.5)) / ry if ry else 0
+        if t * t > 1:
+            return None
+        half = rx * (1 - t * t) ** 0.5
+        return int(cx + 0.5 - half + 0.5), int(cx + 0.5 + half - 0.5)
+    k, i = min(y - y0, y1 - y), 0
+    if k < r:
+        d = r - k - 0.5
+        i = r - int((r * r - d * d) ** 0.5 + 0.5) if d * d < r * r else r
+    return x0 + i, x1 - i
+
+
+def _clamp_r(r, x0, y0, x1, y1):
+    m = min(int((x1 - x0 + 1) / 2), int((y1 - y0 + 1) / 2))
+    return 0 if r < 0 else min(r, m)
+
+
+def shape(ell, x0, y0, x1, y1, r, fill, outline, w, dx, dy, cx0, cy0, cx1, cy1):
+    cx0, cy0, cx1, cy1 = max(0, cx0), max(_band[0], cy0), min(WIDTH, cx1), min(_band[1], cy1)
+    r_out = _clamp_r(r, x0, y0, x1, y1)
+    ix0, iy0, ix1, iy1 = x0 + w, y0 + w, x1 - w, y1 - w
+    r_in = _clamp_r(max(0, r - w), ix0, iy0, ix1, iy1)
+
+    def span(py, a, b, c):
+        a, b = max(a, cx0), min(b, cx1 - 1)
+        if b >= a:
+            canvas_bytes[py * WIDTH + a:py * WIDTH + b + 1] = bytes([c]) * (b - a + 1)
+
+    for py in range(cy0, cy1):
+        y = py - dy
+        row = _shape_row(ell, x0, y0, x1, y1, r_out, y)
+        if row is None:
+            continue
+        a, b = row
+        if not (outline >= 0 and w > 0):
+            if fill >= 0:
+                span(py, dx + a, dx + b, fill)
+            continue
+        inner = _shape_row(ell, ix0, iy0, ix1, iy1, r_in, y)
+        if inner and inner[0] <= inner[1]:
+            span(py, dx + a, dx + inner[0] - 1, outline)
+            span(py, dx + inner[1] + 1, dx + b, outline)
+            if fill >= 0:
+                span(py, dx + inner[0], dx + inner[1], fill)
+        else:
+            span(py, dx + a, dx + b, outline)
+
+
+def glyphs(placed, bitmaps, c, dx, dy, cx0, cy0, cx1, cy1):
+    import struct
+    for k in range(0, len(placed) - 9, 10):
+        x, y, w, h, off = struct.unpack_from("<hhBBI", placed, k)
+        glyph(dx + x, dy + y, w, h, memoryview(bitmaps)[off:off + ((w + 1) // 2) * h], c, cx0, cy0, cx1, cy1)
+
+
 def show(*args):
     global shows
     shows += 1

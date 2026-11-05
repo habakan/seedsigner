@@ -15,48 +15,6 @@ def _fill(x0, y0, x1, y1, c, clip):
         _gfx.fill(x0, y0, x1, y1, c)
 
 
-def _inset(r, k):
-    """How far row k of a corner of radius r starts in from the side."""
-    d = r - k - 0.5
-    return r - int((r * r - d * d) ** 0.5 + 0.5) if d * d < r * r else r
-
-
-def _rrect_rows(x0, y0, x1, y1, r):
-    """(y, left, right) spans of a rounded rectangle, both inclusive."""
-    r = max(0, min(r, (x1 - x0 + 1) // 2, (y1 - y0 + 1) // 2))
-    for y in range(y0, y1 + 1):
-        k = min(y - y0, y1 - y)
-        i = _inset(r, k) if k < r else 0
-        yield y, x0 + i, x1 - i
-
-
-def _ellipse_rows(x0, y0, x1, y1):
-    cx, cy, rx, ry = (x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0 + 1) / 2, (y1 - y0 + 1) / 2
-    for y in range(y0, y1 + 1):
-        t = (y + 0.5 - (cy + 0.5)) / ry if ry else 0
-        if t * t > 1:
-            continue
-        half = rx * (1 - t * t) ** 0.5
-        yield y, int(cx + 0.5 - half + 0.5), int(cx + 0.5 + half - 0.5)
-
-
-def _spans(rows, c, dx, dy, clip):
-    for y, a, b in rows:
-        _fill(dx + a, dy + y, dx + b + 1, dy + y + 1, c, clip)
-
-
-def _ring(outer, inner, c, dx, dy, clip):
-    """An outline: each outer row less the inner row it has, if any."""
-    inside = {y: (a, b) for y, a, b in inner}
-    for y, a, b in outer:
-        if y in inside and inside[y][0] <= inside[y][1]:
-            ia, ib = inside[y]
-            _fill(dx + a, dy + y, dx + ia, dy + y + 1, c, clip)
-            _fill(dx + ib + 1, dy + y, dx + b + 1, dy + y + 1, c, clip)
-        else:
-            _fill(dx + a, dy + y, dx + b + 1, dy + y + 1, c, clip)
-
-
 def replay(ops, dx, dy, clip):
     """Draws `ops` offset by (dx, dy) inside `clip`, which is at most a band of rows: what lies wholly
     outside it is skipped here, before the per-row and per-glyph work in Python."""
@@ -74,22 +32,12 @@ def replay(ops, dx, dy, clip):
                     _fill(dx + a[0], dy + a[1], dx + a[2] + 1, dy + a[3] + 1, outline, clip)
         elif k == "rrect":
             _, x0, y0, x1, y1, r, fill, outline, width = op
-            if outline is not None and width > 0:
-                inner = list(_rrect_rows(x0 + width, y0 + width, x1 - width, y1 - width, max(0, r - width)))
-                _ring(_rrect_rows(x0, y0, x1, y1, r), inner, outline, dx, dy, clip)
-                if fill is not None:
-                    _spans(inner, fill, dx, dy, clip)
-            elif fill is not None:
-                _spans(_rrect_rows(x0, y0, x1, y1, r), fill, dx, dy, clip)
+            _gfx.shape(False, x0, y0, x1, y1, r, -1 if fill is None else fill, -1 if outline is None else outline,
+                       width, dx, dy, clip[0], clip[1], clip[2], clip[3])
         elif k == "ellipse":
             _, x0, y0, x1, y1, fill, outline, width = op
-            if outline is not None and width > 0:
-                inner = list(_ellipse_rows(x0 + width, y0 + width, x1 - width, y1 - width))
-                _ring(_ellipse_rows(x0, y0, x1, y1), inner, outline, dx, dy, clip)
-                if fill is not None:
-                    _spans(inner, fill, dx, dy, clip)
-            elif fill is not None:
-                _spans(_ellipse_rows(x0, y0, x1, y1), fill, dx, dy, clip)
+            _gfx.shape(True, x0, y0, x1, y1, 0, -1 if fill is None else fill, -1 if outline is None else outline,
+                       width, dx, dy, clip[0], clip[1], clip[2], clip[3])
         elif k == "line":
             _, pts, c, width = op
             ys = [p[1] for p in pts]
@@ -101,13 +49,10 @@ def replay(ops, dx, dy, clip):
             _, x0, y0, x1, y1, start, end, c, width = op
             _arc(x0, y0, x1, y1, start, end, c, width, dx, dy, clip)
         elif k == "text":
-            _, x, y, text, font, c, anchor = op
+            _, x, y, text, font, c, anchor, placed = op
             if dy + y + 2 * font.size < clip[1] or dy + y - 2 * font.size >= clip[3]:
                 continue
-            bits = memoryview(font.bitmaps)
-            for gx, gy, w, h, off in font.glyphs(text, x, y, anchor):
-                _gfx.glyph(dx + gx, dy + gy, w, h, bits[off:off + ((w + 1) // 2) * h], c,
-                           clip[0], clip[1], clip[2], clip[3])
+            _gfx.glyphs(placed, font.bitmaps, c, dx, dy, clip[0], clip[1], clip[2], clip[3])
         elif k == "qr":
             _, code, border, x, y, w, h, fg, bg, style = op
             _gfx.qr(code, border, dx + x, dy + y, w, h, fg, bg, style, clip[0], clip[1], clip[2], clip[3])
@@ -141,9 +86,9 @@ def _scaled(ops, sx, sy):
             _, code, border, x, y, w, h, fg, bg, style = op
             out.append(("qr", code, border, int(x * sx), int(y * sy), int(w * sx), int(h * sy), fg, bg, style))
         elif op[0] == "text":
-            _, x, y, text, font, c, anchor = op
-            out.append(("text", int(x * sx + 0.5), int(y * sy + 0.5), text,
-                        ImageFont.truetype(font.path, int(font.size * sy + 0.5)), c, anchor))
+            _, x, y, text, font, c, anchor, placed = op
+            out.append(text_op(int(x * sx + 0.5), int(y * sy + 0.5), text,
+                               ImageFont.truetype(font.path, int(font.size * sy + 0.5)), c, anchor))
         else:
             out.append(op)
     return out
@@ -223,9 +168,9 @@ class ImageDraw:
             # As PIL's multiline_text: lines a font's "A" height plus `spacing` apart
             step = font.getbbox("A")[3] + spacing
             for i, line in enumerate(text.split("\n")):
-                self.im.add(("text", x, y + i * step, line, font, c, anchor or "la"))
+                self.im.add(text_op(x, y + i * step, line, font, c, anchor or "la"))
             return
-        self.im.add(("text", x, y, text, font, c, anchor))
+        self.im.add(text_op(x, y, text, font, c, anchor))
 
     def textbbox(self, xy, text, font=None, anchor=None, *args, **kwargs):
         b = font.getbbox(text, anchor=anchor)
@@ -233,6 +178,15 @@ class ImageDraw:
 
     def textlength(self, text, font=None, *args, **kwargs):
         return font.getlength(text)
+
+
+def text_op(x, y, text, font, c, anchor):
+    """A text op, with its glyphs placed once here, `<hhBBI` each, for _gfx.glyphs to draw in every band."""
+    import struct
+    placed = bytearray()
+    for gx, gy, w, h, off in font.glyphs(text, x, y, anchor):
+        placed += struct.pack("<hhBBI", gx, gy, w, h, off)
+    return ("text", x, y, text, font, c, anchor, bytes(placed))
 
 
 def _box(xy):
