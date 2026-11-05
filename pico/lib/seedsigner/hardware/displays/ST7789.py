@@ -39,7 +39,7 @@ class ST7789(BaseDisplayDriver):
 def screenshot(out):
     """Calls out() with what the screen was last sent, a row at a time in _gfx.save's run-length encoding,
     for pico/tests/drive.py: a row's bytes find room in a fragmented heap."""
-    import gc
+    import gc, time
     from seedsigner.gui.renderer import Renderer
 
     def rows(x0, y0, x1, y1):
@@ -47,6 +47,18 @@ def screenshot(out):
             out(_gfx.save(x0, y, x1, y + 1))
 
     gc.collect()
-    with Renderer.get_instance().lock:  # the band is shared with a screen's or a toast's thread
+    # The band is shared with a screen's or a toast's thread; but a screen may read its buttons, and so call
+    # this, while holding the lock itself (the dice keyboard), so it is given a second and then done without
+    lock = Renderer.get_instance().lock
+    for _ in range(20):
+        if lock.acquire(0):
+            break
+        time.sleep_ms(50)
+    else:
+        lock = None
+    try:
         if ST7789.last:
             render(*ST7789.last, rows)
+    finally:
+        if lock:
+            lock.release()
