@@ -85,7 +85,7 @@ class Image:
         if len(self.boxes) != len(self.ops):
             self.boxes = [box(o) for o in self.ops]
         cover = opaque(op)
-        if cover:
+        if cover or op[0] == "rect" and op[6] is not None:
             keep = [i for i, (o, b) in enumerate(zip(self.ops, self.boxes)) if not hidden(o, b, op, cover)]
             if len(keep) < len(self.ops):
                 self.ops, self.boxes = [self.ops[i] for i in keep], [self.boxes[i] for i in keep]
@@ -124,9 +124,12 @@ class Image:
         sx, sy = size[0] / self.size[0], size[1] / self.size[1]
         if sx == 1 and sy == 1:
             return self.copy()
+        # Scaled once here, not at every replay: a supersampled text area is replayed in every band, and its
+        # ops must stay plain for add() to see what a pasted copy covers (a scrolling label's frames)
+        from PIL import ImageDraw
         out = Image("RGBA", size)
         out.mode = self.mode
-        out.ops.append(("scale", self.snapshot(), sx, sy))
+        out.ops = ImageDraw._scaled(self.snapshot(), sx, sy)
         return out
 
     def rotate(self, angle, *args, **kwargs):
@@ -185,6 +188,8 @@ def hidden(old, b, new, cover):
     """Whether `new`, painting `cover`, hides all of `old`, whose extent is b."""
     if old[0] == "rrect" == new[0] and old[1:6] == new[1:6]:
         return True  # the same rounded rectangle again: a redrawn key
+    if old[0] == "rect" == new[0] and old[1:5] == new[1:5] and old[5] is None and new[6] is not None and new[7] >= old[7]:
+        return True  # an outline over one no wider: a warning screen's pulsing edges
     return b is not None and any(c[0] <= b[0] and c[1] <= b[1] and b[2] <= c[2] and b[3] <= c[3] for c in cover)
 
 

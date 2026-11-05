@@ -49,7 +49,7 @@ index c63354c..ba8c24a 100644
  
  extern int mp_interrupt_char;
 diff --git a/ports/rp2/mpthreadport.c b/ports/rp2/mpthreadport.c
-index 043a878..c0476f7 100644
+index 043a878..064ccb0 100644
 --- a/ports/rp2/mpthreadport.c
 +++ b/ports/rp2/mpthreadport.c
 @@ -45,6 +45,13 @@ static void *core1_arg = NULL;
@@ -66,7 +66,7 @@ index 043a878..c0476f7 100644
  // Thread mutex.
  static recursive_mutex_t atomic_mutex;
  
-@@ -83,17 +90,21 @@ void mp_thread_init(void) {
+@@ -83,17 +90,27 @@ void mp_thread_init(void) {
  void mp_thread_deinit(void) {
      assert(get_core_num() == 0);
      // Must ensure that core1 is not currently holding the GC lock, otherwise
@@ -82,7 +82,13 @@ index 043a878..c0476f7 100644
 +    #endif
  }
  
++jmp_buf mp_thread_regs[2];
++
  void mp_thread_gc_others(void) {
++    #if MICROPY_PY_THREAD_GIL
++    size_t regs_bytes = sizeof(jmp_buf);
++    gc_collect_root((void **)&mp_thread_regs[1 - get_core_num()], regs_bytes / sizeof(void *));
++    #endif
      if (core1_entry != NULL) {
 -        // Collect core1's stack if it is active.
 -        gc_collect_root((void **)&core1_stack, 1);
@@ -91,7 +97,7 @@ index 043a878..c0476f7 100644
          gc_collect_root((void **)&core1_arg, 1);
      }
      if (get_core_num() == 1) {
-@@ -132,25 +143,18 @@ mp_uint_t mp_thread_create(void *(*entry)(void *), void *arg, size_t *stack_size
+@@ -132,25 +149,18 @@ mp_uint_t mp_thread_create(void *(*entry)(void *), void *arg, size_t *stack_size
      core1_entry = entry;
      core1_arg = arg;
  
@@ -124,3 +130,39 @@ index 043a878..c0476f7 100644
  
      return 2; // mp_thread_get_id() result for core 1
  }
+diff --git a/ports/rp2/mpthreadport.h b/ports/rp2/mpthreadport.h
+index f2f2e17..4015dec 100644
+--- a/ports/rp2/mpthreadport.h
++++ b/ports/rp2/mpthreadport.h
+@@ -26,7 +26,14 @@
+ #ifndef MICROPY_INCLUDED_RP2_MPTHREADPORT_H
+ #define MICROPY_INCLUDED_RP2_MPTHREADPORT_H
+ 
++#include <setjmp.h>
+ #include "mutex_extra.h"
++#include "pico/platform.h"
++
++// What each core holds in registers when it lets go of the GIL: it waits for it again on another core's GC
++// with them, so that GC traces them here (mp_thread_gc_others); setjmp in the caller is what saves them
++extern jmp_buf mp_thread_regs[2];
++#define MP_THREAD_SAVE_REGS() ((void)setjmp(mp_thread_regs[get_core_num()]))
+ 
+ typedef struct mutex mp_thread_mutex_t;
+ typedef recursive_mutex_nowait_t mp_thread_recursive_mutex_t;
+diff --git a/py/mpthread.h b/py/mpthread.h
+index 795f230..fe0e7a4 100644
+--- a/py/mpthread.h
++++ b/py/mpthread.h
+@@ -59,7 +59,11 @@ void mp_thread_recursive_mutex_unlock(mp_thread_recursive_mutex_t *mutex);
+ #if MICROPY_PY_THREAD && MICROPY_PY_THREAD_GIL
+ #include "py/mpstate.h"
+ #define MP_THREAD_GIL_ENTER() mp_thread_mutex_lock(&MP_STATE_VM(gil_mutex), 1)
+-#define MP_THREAD_GIL_EXIT() mp_thread_mutex_unlock(&MP_STATE_VM(gil_mutex))
++#ifndef MP_THREAD_SAVE_REGS
++#define MP_THREAD_SAVE_REGS()
++#endif
++// A port whose waiting thread keeps pointers in registers (rp2's other core) saves them for the GC first
++#define MP_THREAD_GIL_EXIT() do { MP_THREAD_SAVE_REGS(); mp_thread_mutex_unlock(&MP_STATE_VM(gil_mutex)); } while (0)
+ #else
+ #define MP_THREAD_GIL_ENTER()
+ #define MP_THREAD_GIL_EXIT()
