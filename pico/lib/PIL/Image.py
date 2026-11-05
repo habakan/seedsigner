@@ -86,11 +86,11 @@ class Image:
 
     def paste(self, im, box=None, mask=None):
         if not isinstance(im, Image):  # a colour fills the box
-            x0, y0 = (box[0], box[1]) if box else (0, 0)
-            x1, y1 = (box[2], box[3]) if box and len(box) == 4 else (self.size[0], self.size[1])
+            x0, y0 = (int(box[0]), int(box[1])) if box else (0, 0)
+            x1, y1 = (int(box[2]), int(box[3])) if box and len(box) == 4 else (self.size[0], self.size[1])
             self.add(("rect", x0, y0, x1 - 1, y1 - 1, c332(rgba(im, self.mode)), None, 1))
             return
-        x, y = (box[0], box[1]) if box else (0, 0)
+        x, y = (int(box[0]), int(box[1])) if box else (0, 0)
         self.add(("img", im.snapshot(), x, y, im.size[0], im.size[1]))
 
     def snapshot(self):
@@ -98,7 +98,7 @@ class Image:
         return list(self.ops)
 
     def crop(self, box=None):
-        x0, y0, x1, y1 = box if box else (0, 0, self.size[0], self.size[1])
+        x0, y0, x1, y1 = [int(v) for v in box] if box else (0, 0, self.size[0], self.size[1])  # PIL takes floats
         out = Image("RGBA", (x1 - x0, y1 - y0))
         out.mode = self.mode
         out.ops.append(("img", self.snapshot(), -x0, -y0, self.size[0], self.size[1]))
