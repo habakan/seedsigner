@@ -52,9 +52,16 @@ static void cmd(uint8_t c, const uint8_t *data, unsigned int n) {
     if (n) spi_write_blocking(LCD_SPI, data, n);
 }
 
-/* bitwasm-signer-pico a6a5b91's st7789_init: CS tied low (so SPI mode 3), RES tied high, IPS inverted */
+/* bitwasm-signer-pico a6a5b91's st7789_init: CS tied low (so SPI mode 3), IPS inverted. With CS low, noise on
+ * SCK while the Pico resets shifts the LCD's bit count until it is reset too, which RES now does */
 static void lcd_init(void) {
     static const uint8_t colmod = 0x55, madctl = 0x00;
+    gpio_init(PIN_LCD_RES);
+    gpio_set_dir(PIN_LCD_RES, GPIO_OUT);
+    gpio_put(PIN_LCD_RES, 0);
+    sleep_ms(10);
+    gpio_put(PIN_LCD_RES, 1);
+    sleep_ms(120);
     spi_init(LCD_SPI, LCD_BAUD);
     spi_set_format(LCD_SPI, 8, SPI_CPOL_1, SPI_CPHA_1, SPI_MSB_FIRST);
     gpio_set_function(PIN_LCD_SCK, GPIO_FUNC_SPI);

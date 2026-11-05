@@ -3,7 +3,7 @@
 
 /* The GPIO assignment from docs/hardware.md; change both together */
 
-#define PIN_UART_TX 0 /* to the Debug Probe's UART; RX is unused */
+#define PIN_LCD_RES 0 /* was the Debug Probe's UART TX: a reset the firmware drives, so a flash cannot leave the LCD out of step */
 
 #define PIN_CAM_D0 2 /* D0 to D7 are read as a run by PIO, so they sit on GP2 to GP9 */
 #define PIN_CAM_PCLK 10
@@ -15,7 +15,7 @@
 
 #define PIN_LCD_DC 16
 #define PIN_LCD_SCK 18  /* SPI0 SCK */
-#define PIN_LCD_MOSI 19 /* SPI0 TX; CS is tied to ground, RES and BLK to 3V3 */
+#define PIN_LCD_MOSI 19 /* SPI0 TX; CS is tied to ground, BLK to 3V3 */
 
 #define PIN_JOY_UP 13
 #define PIN_JOY_DOWN 17
