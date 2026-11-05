@@ -109,3 +109,43 @@ def test_modules_are_pinned(monkeypatch):
     monkeypatch.setattr(bitwasm, "SIGNER_SHA256", "00" * 32)
     with pytest.raises(ValueError):
         bitwasm._load_signer()
+
+
+
+@pytest.mark.parametrize("script", [
+    b"\x6a", b"\x6a\x04data\x04more", b"\x6a\x4c\x50" + b"B" * 80, b"\x6a\x4d\x0a\x00" + b"E" * 10,
+    b"\x6a\x4e\x05\x00\x00\x00hello", b"\x6a\x00\x51\x60\x4f", b"\x6a\x02hi\x51",
+    b"\x6a\x10abc", b"\x6a\x4d\x01", b"\x6a\xac", b"\x6a\x02hi\x61",
+])
+def test_op_return_reads_as_upstream(script):
+    """The Pico's OP_RETURN reader agrees with PSBTParser's, which it cannot import, refusals included."""
+    from seedsigner.models.psbt_errors import PSBTMalformedOpReturnError
+    from seedsigner.models.psbt_wasm import _op_return
+
+    try:
+        want = PSBTParser._parse_op_return_payload(script)
+    except PSBTMalformedOpReturnError:
+        with pytest.raises(PSBTMalformedOpReturnError):
+            _op_return(script)
+    else:
+        assert _op_return(script) == want
+
+
+
+@pytest.mark.parametrize("refusal, error", [
+    ("review: PREVTX_MISMATCH", "PSBTInputAmountVerificationError"),
+    ("review: FEE", "PSBTNegativeFeeError"),
+    ("review: NOT_OURS", "PSBTInputOwnershipClaimError"),
+    ("review: SIGHASH", "PSBTBitwasmRefusedError"),
+])
+def test_wasm_refusals_reach_upstreams_errors(monkeypatch, refusal, error):
+    """Where upstream has an error of its own, the Pico's parser raises it, so the same screen follows."""
+    from seedsigner.models import psbt_errors
+    from seedsigner.models.psbt_wasm import WasmPSBTParser
+
+    def refuse(*args, **kwargs):
+        raise BitwasmError(refusal)
+
+    monkeypatch.setattr(bitwasm, "BitwasmReview", refuse)
+    with pytest.raises(getattr(psbt_errors, error)):
+        WasmPSBTParser(b"psbt", seed=object())

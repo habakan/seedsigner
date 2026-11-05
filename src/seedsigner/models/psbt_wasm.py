@@ -8,7 +8,8 @@ descriptor registered with the signer; embit's parser would presume it change fr
 import struct
 
 from seedsigner.helpers import bitwasm, wallet
-from seedsigner.models.psbt_errors import PSBTBitwasmRefusedError, PSBTSeedCannotSignError
+from seedsigner.models.psbt_errors import (PSBTBitwasmRefusedError, PSBTInputAmountVerificationError,
+    PSBTInputOwnershipClaimError, PSBTMalformedOpReturnError, PSBTNegativeFeeError, PSBTSeedCannotSignError)
 from seedsigner.models.settings import SettingsConstants
 
 P = bitwasm
@@ -36,13 +37,30 @@ def _policy(spk: bytes, wscript: bytes) -> dict:
 
 
 def _op_return(spk: bytes) -> bytes:
-    """The payload after OP_RETURN's push, of whichever size."""
-    op = spk[1] if len(spk) > 1 else 0
-    if op == 0x4c:
-        return bytes(spk[3:3 + spk[2]])
-    if op == 0x4d:
-        return bytes(spk[4:4 + (spk[2] | spk[3] << 8)])
-    return bytes(spk[2:2 + op]) if 0 < op < 0x4c else b""
+    """The pushes after OP_RETURN, joined, as PSBTParser._parse_op_return_payload reads them (it needs embit's
+    module): opcodes up to OP_16 that push no data are kept as they are, and anything else is refused."""
+    out, i = b"", 1
+    while i < len(spk):
+        op = spk[i]
+        size = {0x4c: 1, 0x4d: 2, 0x4e: 4}.get(op, 0)
+        if not (1 <= op <= 0x4b or size):
+            if op > 0x60:
+                raise PSBTMalformedOpReturnError("OP_RETURN script holds non-push opcode 0x%02x" % op)
+            out, i = out + spk[i:i + 1], i + 1
+            continue
+        if i + 1 + size > len(spk):
+            raise PSBTMalformedOpReturnError("OP_RETURN push length field is truncated")
+        n = int.from_bytes(spk[i + 1:i + 1 + size], "little") if size else op
+        if i + 1 + size + n > len(spk):
+            raise PSBTMalformedOpReturnError("OP_RETURN push runs past the end of the script")
+        out, i = out + spk[i + 1 + size:i + 1 + size + n], i + 1 + size + n
+    return bytes(out)
+
+
+# signer.wasm's refusals that upstream's PSBTParser has its own error for, so the Pico shows the same screen.
+# NOT_OURS also covers a P2WSH input whose witness script is not its own, which upstream calls an attack
+_REFUSALS = {"review: PREVTX_MISMATCH": PSBTInputAmountVerificationError, "review: FEE": PSBTNegativeFeeError,
+             "review: NOT_OURS": PSBTInputOwnershipClaimError}
 
 
 
@@ -79,7 +97,7 @@ class WasmPSBTParser:
         except P.BitwasmError as e:
             if "NOTHING_TO_SIGN" in str(e):
                 raise PSBTSeedCannotSignError() from e
-            raise PSBTBitwasmRefusedError(str(e)) from e
+            raise _REFUSALS.get(str(e), PSBTBitwasmRefusedError)(str(e)) from e
         self.bitwasm_review = r
         plan, shown, review = r.plan, r.display, r.review
 
