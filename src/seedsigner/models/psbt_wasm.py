@@ -61,7 +61,7 @@ class WasmPSBTParser:
         self.change_amount = 0
         self.change_data = []
         self.fee_amount = 0
-        self.input_amount = 0
+        self.verified_input_amount = 0
         self.num_inputs = 0
         self.destination_addresses = []
         self.destination_amounts = []
@@ -84,7 +84,7 @@ class WasmPSBTParser:
         plan, shown, review = r.plan, r.display, r.review
 
         self.num_inputs = plan[P.PLAN_N_INPUTS]
-        self.input_amount = review["total_in"]
+        self.verified_input_amount = review["total_in"]
         self.fee_amount = shown["fee"]
         for i in range(self.num_inputs):
             if review["will_sign"][i]:

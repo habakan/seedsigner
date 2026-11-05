@@ -10,6 +10,7 @@ MALFORMED = "a fixture parser.wasm rejects: no outputs, or a non_witness_utxo th
 ALREADY_SIGNED = "signer.wasm has nothing to sign when this seed's signature is already there"
 MESSAGE_MAX = "signer.wasm signs messages of at most 512 bytes; the multipage scenario's is 576"
 NOT_STANDARD = "signer.wasm derives only m/49h, m/84h, m/86h and m/48h/.../2h, with this network's coin type"
+SPK_MAX = "parser.wasm takes output scripts of at most 83 bytes, so an OP_RETURN of at most 80"
 
 BITWASM_REFUSES = {
     "test_decodepsbtqr.py::test_base64_2_input_p2wsh": NO_PREVTX,
@@ -37,12 +38,21 @@ BITWASM_REFUSES = {
     "test_flows_seed.py::TestSeedFlows::test_export_xpub_custom_derivation_flow": NOT_STANDARD,
     "test_flows_seed.py::TestSeedFlows::test_export_xpub_electrum_seed_flow": NOT_STANDARD,
     "test_flows_seed.py::TestMessageSigningFlows::test_sign_message_flow": MESSAGE_MAX,
+    "test_psbt_parser.py::test_parse_op_return_content_pushdata2": SPK_MAX,
+    "test_psbt_parser.py::TestPSBTParserInputScripts::test__parse__checks_input_scripts_whoever_the_input_belongs_to": NO_PREVTX,
+    # A parametrized test's psbts, by the start of their base64: P2PKH, P2SH-P2WSH and P2SH multisig
+    "test_psbt_parser.py::TestPSBTInputAmountVerification::test_untampered_psbts_verify[cHNidP8BADMCAAAAAa79*": NESTED_OR_LEGACY,
+    "test_psbt_parser.py::TestPSBTInputAmountVerification::test_untampered_psbts_verify[cHNidP8BADMCAAAAAbtb*": NESTED_OR_LEGACY,
+    "test_psbt_parser.py::TestPSBTInputAmountVerification::test_untampered_psbts_verify[cHNidP8BADMCAAAAAarS*": NESTED_OR_LEGACY,
+    "test_psbt_parser.py::TestPSBTInputAmountVerification::test_segwit_input_without_non_witness_utxo_is_allowed[cHNidP8BADMCAAAAAbtb*": NESTED_OR_LEGACY,
 }
 
 
 def pytest_collection_modifyitems(config, items):
     for item in items:
-        reason = BITWASM_REFUSES.get(item.nodeid.split("tests/", 1)[-1])
+        node = item.nodeid.split("tests/", 1)[-1]
+        reason = BITWASM_REFUSES.get(node) or next(
+            (r for k, r in BITWASM_REFUSES.items() if k.endswith("*") and node.startswith(k[:-1])), None)
         if reason:
             item.add_marker(pytest.mark.xfail(reason=reason, strict=True))
 
@@ -65,7 +75,7 @@ def compare_with_wasm_parser(monkeypatch, request):
         ok = parse(self)
         if ok:
             w = WasmPSBTParser(self.psbt, self.seed, self.network, self.psbt_bytes, self.multisig_descriptor)
-            fields = ["fee_amount", "input_amount", "num_inputs", "op_return_data", "is_multisig"]
+            fields = ["fee_amount", "verified_input_amount", "num_inputs", "op_return_data", "is_multisig"]
             if self.is_multisig and not w.bitwasm_review.wallet_registered:
                 WASM_PARSER_CHECKS["change_skipped"] += 1
             else:

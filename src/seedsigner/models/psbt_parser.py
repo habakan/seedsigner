@@ -29,17 +29,7 @@ class OPCODES:
 
 
 
-from seedsigner.models.psbt_errors import (PSBTVerificationError, PSBTOutputOwnershipClaimError, PSBTInputOwnershipClaimError, PSBTSurplusDerivationPathsError, PSBTMixedDerivationPathTypesError, PSBTOutputOwnershipContradictionError, PSBTInputAmountVerificationError, PSBTBitwasmRefusedError, PSBTMissingInputUtxoError, PSBTMalformedOpReturnError, PSBTMissingInputScriptError, PSBTInputScriptMismatchError, PSBTExtraneousInputScriptError, PSBTBitwasmDisagreementError, PSBTSeedCannotSignError)
-
-
-class PSBTNegativeFeeError(PSBTVerificationError):
-    """
-    The outputs spend more than the inputs bring in, so the fee is negative.
-
-    This is a malformed psbt rather than a proven deception, so we do not treat it as an
-    attack.
-    """
-    pass
+from seedsigner.models.psbt_errors import (PSBTVerificationError, PSBTOutputOwnershipClaimError, PSBTInputOwnershipClaimError, PSBTSurplusDerivationPathsError, PSBTMixedDerivationPathTypesError, PSBTOutputOwnershipContradictionError, PSBTInputAmountVerificationError, PSBTBitwasmRefusedError, PSBTMissingInputUtxoError, PSBTMalformedOpReturnError, PSBTMissingInputScriptError, PSBTInputScriptMismatchError, PSBTExtraneousInputScriptError, PSBTBitwasmDisagreementError, PSBTSeedCannotSignError, PSBTNegativeFeeError)
 
 
 class PSBTParser():

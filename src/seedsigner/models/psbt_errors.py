@@ -182,3 +182,13 @@ class PSBTSeedCannotSignError(PSBTVerificationError):
     through reviewing and approving a transaction that would then produce no signatures.
     """
     pass
+
+
+class PSBTNegativeFeeError(PSBTVerificationError):
+    """
+    The outputs spend more than the inputs bring in, so the fee is negative.
+
+    This is a malformed psbt rather than a proven deception, so we do not treat it as an
+    attack.
+    """
+    pass
