@@ -900,7 +900,7 @@ class SeedExportXpubDetailsView(View):
         elif seed_derivation_override:
             derivation_path = seed_derivation_override
         else:
-            from seedsigner.helpers import embit_utils
+            from seedsigner.helpers import wallet as embit_utils  # the derivation path needs no embit
             derivation_path = embit_utils.get_standard_derivation_path(
                 network=self.settings.get_value(SettingsConstants.SETTING__NETWORK),
                 wallet_type=self.sig_type,
@@ -1257,7 +1257,8 @@ class SeedWordsBackupTestView(View):
 
 
     def run(self):
-        from embit import bip39
+        from seedsigner.models.seed import Seed
+        wordlist = Seed.get_wordlist()  # signer.wasm's, as the Pico has no embit
 
         if self.rand_seed is not None:
             random.seed(self.rand_seed + self.cur_index if self.cur_index is not None else 0)
@@ -1268,9 +1269,9 @@ class SeedWordsBackupTestView(View):
                 self.cur_index = int(random.random() * len(self.mnemonic_list))
 
         real_word = ButtonOptionWithoutTranslation(self.mnemonic_list[self.cur_index])
-        fake_word1 = ButtonOptionWithoutTranslation(bip39.WORDLIST[int(random.random() * 2047)])
-        fake_word2 = ButtonOptionWithoutTranslation(bip39.WORDLIST[int(random.random() * 2047)])
-        fake_word3 = ButtonOptionWithoutTranslation(bip39.WORDLIST[int(random.random() * 2047)])
+        fake_word1 = ButtonOptionWithoutTranslation(wordlist[int(random.random() * 2047)])
+        fake_word2 = ButtonOptionWithoutTranslation(wordlist[int(random.random() * 2047)])
+        fake_word3 = ButtonOptionWithoutTranslation(wordlist[int(random.random() * 2047)])
 
         button_data = [real_word, fake_word1, fake_word2, fake_word3]
         random.shuffle(button_data)
@@ -1723,7 +1724,7 @@ class AddressVerificationStartView(View):
 
 
     def run(self):
-        from seedsigner.helpers import embit_utils
+        from seedsigner.helpers import wallet as embit_utils  # the derivation path needs no embit
         from seedsigner.controller import Controller
 
         if self.controller.unverified_address["script_type"] == SettingsConstants.LEGACY_P2PKH:
@@ -1772,7 +1773,7 @@ class AddressVerificationSigTypeView(View):
     MULTISIG = ButtonOption("Multisig")
 
     def run(self):
-        from seedsigner.helpers import embit_utils
+        from seedsigner.helpers import wallet as embit_utils  # the derivation path needs no embit
         from seedsigner.controller import Controller
         button_data = [self.SINGLE_SIG, self.MULTISIG]
         selected_menu_num = self.run_screen(

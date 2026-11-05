@@ -70,8 +70,8 @@ def replay(ops, dx, dy, clip):
 
 
 def _scaled(ops, sx, sy):
-    """Rectangles scale (a QR code's modules) and text takes the font at the scaled size, which is what a
-    supersampled text area's resize comes to; anything else is drawn as it was."""
+    """What a supersampled image's resize comes to: shapes and lines scale, text takes the font at the scaled
+    size, and images and QR codes their scaled box."""
     from PIL import ImageFont
     out = []
     for op in ops:
@@ -85,6 +85,21 @@ def _scaled(ops, sx, sy):
         elif op[0] == "qr":
             _, code, border, x, y, w, h, fg, bg, style = op
             out.append(("qr", code, border, int(x * sx), int(y * sy), int(w * sx), int(h * sy), fg, bg, style))
+        elif op[0] == "line":
+            _, pts, c, width = op
+            out.append(("line", [(int(x * sx + 0.5), int(y * sy + 0.5)) for x, y in pts], c,
+                        max(1, int(width * min(sx, sy) + 0.5))))
+        elif op[0] in ("rrect", "ellipse", "arc"):
+            # The box scales; a radius and an outline's width scale with it, to at least a pixel
+            k, x0, y0, x1, y1 = op[:5]
+            box = (int(x0 * sx), int(y0 * sy), int((x1 + 1) * sx) - 1, int((y1 + 1) * sy) - 1)
+            w = max(1, int(op[-1] * min(sx, sy) + 0.5))
+            if k == "rrect":
+                out.append((k,) + box + (int(op[5] * min(sx, sy) + 0.5), op[6], op[7], w))
+            elif k == "ellipse":
+                out.append((k,) + box + (op[5], op[6], w))
+            else:
+                out.append((k,) + box + (op[5], op[6], op[7], w))
         elif op[0] == "text":
             _, x, y, text, font, c, anchor, placed = op
             out.append(text_op(int(x * sx + 0.5), int(y * sy + 0.5), text,
