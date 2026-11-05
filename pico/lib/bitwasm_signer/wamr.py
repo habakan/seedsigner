@@ -13,6 +13,10 @@ class Instance:
             self._e = _wamr.Instance(wasm)
             self.memory = self._e.memory()
 
+    def alive(self):
+        """False once the camera or a newer Instance has taken WAMR's pool."""
+        return self._e is _bitwasm or self._e.alive()
+
     def __getattr__(self, name):
         if self._e is _bitwasm:
             return getattr(_bitwasm, name)

@@ -1,0 +1,1 @@
+camera.c, camera.h, camera_ov7670.c, camera.pio, board_pins.h and qr_reader/ are bitwasm-signer-pico a6a5b91's src/drivers, src/board_pins.h and src/runtime/qr_reader, unchanged.

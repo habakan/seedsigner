@@ -68,7 +68,8 @@ class _NativeSigner(Signer):
 def _load_parser():
     """One parser instance per process, read and hash-checked on first use."""
     global _parser
-    if _parser is None:
+    # On the Pico the camera borrows WAMR's pool while it scans, which ends the instance
+    if _parser is None or not getattr(_parser, "alive", lambda: True)():
         wasm = _read("parser.wasm")
         if hashlib.sha256(wasm).digest().hex() != PARSER_SHA256:
             raise BitwasmError("parser.wasm is not the pinned build")

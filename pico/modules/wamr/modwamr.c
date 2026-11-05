@@ -14,6 +14,29 @@ static bool runtime_up;
 static wasm_module_t live_mod;
 static wasm_module_inst_t live_inst;
 static wasm_exec_env_t live_env;
+static bool lent;
+
+static void drop_live(void) {
+    if (!live_inst) return;
+    wasm_runtime_destroy_exec_env(live_env);
+    wasm_runtime_deinstantiate(live_inst);
+    wasm_runtime_unload(live_mod);
+    live_env = NULL, live_inst = NULL, live_mod = NULL;
+}
+
+/* The pool for the camera while it scans: the module and the runtime go, and the next Instance brings
+ * both back. The borrower wipes what it wrote before returning it */
+uint8_t *wamr_pool_borrow(size_t *size) {
+    if (lent) return NULL;
+    drop_live();
+    if (runtime_up) wasm_runtime_destroy(), runtime_up = false;
+    lent = true, *size = sizeof(pool);
+    return (uint8_t *)pool;
+}
+
+void wamr_pool_return(void) {
+    lent = false;
+}
 
 typedef struct {
     mp_obj_base_t base;
@@ -25,6 +48,7 @@ typedef struct {
 static mp_obj_t instance_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *args) {
     mp_arg_check_num(n_args, n_kw, 1, 1, false);
     char err[128];
+    if (lent) mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("the camera has WAMR's pool"));
     if (!runtime_up) {
         RuntimeInitArgs init;
         memset(&init, 0, sizeof(init));
@@ -34,12 +58,7 @@ static mp_obj_t instance_make_new(const mp_obj_type_t *type, size_t n_args, size
         if (!wasm_runtime_full_init(&init)) mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("WAMR init failed"));
         runtime_up = true;
     }
-    if (live_inst) {
-        wasm_runtime_destroy_exec_env(live_env);
-        wasm_runtime_deinstantiate(live_inst);
-        wasm_runtime_unload(live_mod);
-        live_env = NULL, live_inst = NULL, live_mod = NULL;
-    }
+    drop_live();
     instance_t *self = mp_obj_malloc(instance_t, type);
     mp_buffer_info_t buf;
     mp_get_buffer_raise(args[0], &buf, MP_BUFFER_READ);
@@ -82,6 +101,13 @@ static mp_obj_t instance_call(size_t n_args, const mp_obj_t *args) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(instance_call_obj, 2, 10, instance_call);
 
+/* alive(): False once a newer Instance or the camera has taken the runtime */
+static mp_obj_t instance_alive(mp_obj_t self_in) {
+    instance_t *self = MP_OBJ_TO_PTR(self_in);
+    return mp_obj_new_bool(self->inst != NULL && self->inst == live_inst);
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(instance_alive_obj, instance_alive);
+
 static mp_obj_t instance_memory(mp_obj_t self_in) {
     instance_t *self = live(self_in);
     wasm_memory_inst_t mem = wasm_runtime_get_default_memory(self->inst);
@@ -101,6 +127,7 @@ static MP_DEFINE_CONST_FUN_OBJ_0(pool_info_obj, pool_info);
 static const mp_rom_map_elem_t instance_locals[] = {
     { MP_ROM_QSTR(MP_QSTR_call), MP_ROM_PTR(&instance_call_obj) },
     { MP_ROM_QSTR(MP_QSTR_memory), MP_ROM_PTR(&instance_memory_obj) },
+    { MP_ROM_QSTR(MP_QSTR_alive), MP_ROM_PTR(&instance_alive_obj) },
 };
 static MP_DEFINE_CONST_DICT(instance_locals_dict, instance_locals);
 
