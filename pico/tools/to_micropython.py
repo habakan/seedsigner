@@ -196,6 +196,17 @@ class Strip(ast.NodeTransformer):
         self.generic_visit(node)
         return node
 
+    def visit_FormattedValue(self, node):
+        # MicroPython's format ignores __format__ (pico/lib/pico_format.py); only a constant spec is seen
+        self.generic_visit(node)
+        spec = node.format_spec
+        if CPYTHON or spec is None or not all(isinstance(v, ast.Constant) for v in spec.values):
+            return node
+        text = "".join(v.value for v in spec.values)
+        node.value = ast.Call(ast.Name("pico_fmt"), [node.value, ast.Constant(text)], [])
+        node.format_spec = None
+        return node
+
     def visit_Name(self, node):
         # MicroPython raises OSError, with an errno, where CPython raises these subclasses of it
         if node.id in ("FileNotFoundError", "PermissionError", "IsADirectoryError", "NotADirectoryError", "FileExistsError"):
@@ -239,6 +250,8 @@ def main():
         tree = Strip(fields, registry).visit(trees[p])
         ast.fix_missing_locations(tree)
         text = ast.unparse(tree)
+        if "pico_fmt(" in text:
+            text = "from pico_format import fmt as pico_fmt\n" + text
         if "mixin_super(" in text:
             text = "from pico_super import mixin_super\n" + text
         if MISSING in text:

@@ -185,6 +185,13 @@ RAM decided most of the way there:
 - No thread runs beside the camera: ScanScreen draws its progress between reads, and the review's
   animated chart is static. There is no camera preview yet.
 
+## A regtest spend
+
+`pico/tests/regtest.sh` checks the signature against Bitcoin Core: a watch-only wallet for the test seed
+funds a PSBT, the Pico (set to Regtest, the seed read from a SeedQR) scans, reviews and signs it, and the
+signed animated QR read back from its screen is finalized, accepted and mined. The first run's 0.1 tBTC
+spend confirmed (txid d640897e4ff1fa4f75853dd2c89e4f6bcfebd1706fe8411d5386965c4e2f4988, fee 282 sats).
+
 ## What the Pico build gives up
 
 Whatever `signer.wasm` does not do: Electrum seeds, non-English wordlists, legacy P2PKH, custom

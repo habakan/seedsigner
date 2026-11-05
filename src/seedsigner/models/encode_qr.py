@@ -109,7 +109,7 @@ class CompactSeedQrEncoder(SeedQrEncoder):
             index = self.wordlist.index(word)
 
             # Convert index to binary, strip out '0b' prefix; zero-pad to 11 bits
-            binary_str += bin(index).split('b')[1].zfill(11)
+            binary_str += "{:011b}".format(index)  # MicroPython's str has no zfill
 
         # We can exclude the checksum bits at the end
         if len(self.mnemonic) == 24:

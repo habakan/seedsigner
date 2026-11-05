@@ -41,7 +41,7 @@ class Decimal:
         if self.exp <= 0 and adjusted >= -6:
             if self.exp == 0:
                 return sign + digits
-            digits = digits.rjust(-self.exp + 1, "0")
+            digits = "0" * (-self.exp + 1 - len(digits)) + digits  # MicroPython's str has no rjust
             return sign + digits[:self.exp] + "." + digits[self.exp:]
         mant = digits[0] + ("." + digits[1:] if len(digits) > 1 else "")
         return sign + mant + "E" + ("+" if adjusted >= 0 else "-") + str(abs(adjusted))
