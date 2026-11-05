@@ -160,6 +160,16 @@ class Strip(ast.NodeTransformer):
         self.generic_visit(node)
         return node
 
+    def visit_Call(self, node):
+        # cls.__new__(cls) for a class without its own __new__: MicroPython's classes only have
+        # object's, reached as object.__new__ (no SeedSigner class defines one)
+        self.generic_visit(node)
+        f = node.func
+        if (isinstance(f, ast.Attribute) and f.attr == "__new__" and isinstance(f.value, ast.Name)
+                and len(node.args) == 1 and isinstance(node.args[0], ast.Name) and node.args[0].id == f.value.id):
+            node.func = ast.Attribute(ast.Name("object"), "__new__")
+        return node
+
     def visit_ImportFrom(self, node):
         if node.module in ("__future__", "dataclasses"):
             return None
