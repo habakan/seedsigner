@@ -112,6 +112,18 @@ What MicroPython needed:
 Fragmentation is the device's open risk: a 32 KB PSBT will want its buffer taken early, as the UR
 message's now is.
 
+## The camera
+
+`pico/modules/camera` is bitwasm-signer-pico's DVP camera driver (OV7670/OV7675) and its Rust QR reader
+as `_camera`. The 320x240 frame and the reader's state, about 80 KB, are borrowed from WAMR's pool: the
+RAM cannot hold them beside it, and parser.wasm is not needed while a code is being scanned. Borrowing
+ends the parser's instance; `helpers/bitwasm.py` starts a new one on the next PSBT.
+
+`pico/tests/scan.py` feeds frames to SeedSigner's `DecodeQR` and, for a PSBT, reviews and signs it.
+Pointed at a laptop screen cycling bitwasm-signer's `own_p2wpkh_2in_nwu` as 21 UR frames (v5, 0.4 s
+each), it completed in 42 s, reading 40 of 108 frames (0.39 s a frame), and signed it into the bytes
+CPython does. Synthetic frames read in 0.33 s (SeedQR) and 0.44 s (UR, v11).
+
 ## What the Pico build gives up
 
 Whatever `signer.wasm` does not do: Electrum seeds, non-English wordlists, legacy P2PKH, custom
