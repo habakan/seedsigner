@@ -160,6 +160,27 @@ driven by the buttons. Getting there took:
   `format_exc` the exception (`--cpython` skips that, to run the tests on the transformed tree: all pass).
 - A 16 KB stack for threads, which the preload thread's imports need.
 
+## The whole flow on the device
+
+SeedSigner's own screens now take a 12-word seed from the buttons, scan an animated UR PSBT with the
+camera, review it, sign it and show the signed QR (driven over USB serial with `pico/tests/drive.py`).
+RAM decided most of the way there:
+
+| | KB |
+|---|---|
+| GC heap at first (WAMR's pool 160, a 57.6 KB canvas) | 168 |
+| screens drawn a 40-row band at a time, no canvas | 223 |
+| parser.wasm built without its UR decoder (bitwasm-signer), pool 116 KB | 275 |
+
+- The canvas is a list of drawing operations; an opaque one drops what it hides, or a keyboard's redraws
+  pile up. A View's finished Screen is let go, or the back stack holds one per seed word.
+- Buffers the heap may not find late are static or taken at import: WAMR's module copy, the plan.
+- MicroPython is patched (`pico/patches/micropython-rp2.patch`): a GIL, as SeedSigner's threads assume
+  CPython's; one static 16 KB core1 stack, as a heap one cannot be found and its MemoryError left core1
+  claimed; a 20 KB C stack, as the camera's QR reader is called 20-odd Python calls deep.
+- No thread runs beside the camera: ScanScreen draws its progress between reads, and the review's
+  animated chart is static. There is no camera preview yet.
+
 ## What the Pico build gives up
 
 Whatever `signer.wasm` does not do: Electrum seeds, non-English wordlists, legacy P2PKH, custom

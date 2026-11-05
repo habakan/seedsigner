@@ -1,3 +1,4 @@
+import sys
 import time
 
 from dataclasses import dataclass
@@ -63,13 +64,16 @@ class ScanScreen(BaseScreen):
 
         self.frames_decode_status = ThreadsafeCounter()
 
-        self.threads.append(ScanScreen.LivePreviewThread(
+        self.preview = ScanScreen.LivePreviewThread(
             decoder=self.decoder,
             renderer=self.renderer,
             instructions_text=self.instructions_text,
             render_rect=self.render_rect,
             frame_decode_status=self.frames_decode_status,
-        ))
+        )
+        if sys.implementation.name != "micropython":
+            # The Pico draws it between camera reads instead: on its second core alongside them, it crashes
+            self.threads.append(self.preview)
 
 
     class LivePreviewThread(BaseThread):
@@ -93,133 +97,133 @@ class ScanScreen(BaseScreen):
 
 
         def run(self):
-            instructions_font = Fonts.get_font(GUIConstants.get_body_font_name(), GUIConstants.get_button_font_size())
+            while self.keep_running:
+                self.render_once()
+                if self.camera._video_stream is None:
+                    break
 
+
+        def render_once(self):
+            instructions_font = Fonts.get_font(GUIConstants.get_body_font_name(), GUIConstants.get_button_font_size())
             # pre-calculate how big the animated QR percent display can be
             (left, top, right, bottom) = instructions_font.getbbox("100%")
             progress_text_width = right - left
 
-            num_frames = 0
-            while self.keep_running:
-                frame = self.camera.read_video_stream(as_image=True)
-                if frame is not None:
-                    num_frames += 1
-                    
-                    scan_text = None
-                    progress_percentage = self.decoder.get_percent_complete()
-                    if progress_percentage == 0:
-                        # We've just started scanning, no results yet
-                        scan_text = self.instructions_text
+            frame = self.camera.read_video_stream(as_image=True)
+            if frame is not None:
+                
+                scan_text = None
+                progress_percentage = self.decoder.get_percent_complete()
+                if progress_percentage == 0:
+                    # We've just started scanning, no results yet
+                    scan_text = self.instructions_text
 
-                    with self.renderer.lock:
-                        # Use nearest neighbor resizing for max speed
-                        frame = resize_image_to_fill(frame, self.render_width, self.render_height, sampling_method=Image.Resampling.NEAREST)
+                with self.renderer.lock:
+                    # Use nearest neighbor resizing for max speed
+                    frame = resize_image_to_fill(frame, self.render_width, self.render_height, sampling_method=Image.Resampling.NEAREST)
 
-                        if scan_text:
-                            # Note: shadowed text (adding a 'stroke' outline) can
-                            # significantly slow down the rendering.
-                            # Temp solution: render a slight 1px shadow behind the text
-                            # TODO: Replace the instructions_text with a disappearing
-                            # toast/popup (see: QR Brightness UI)?
+                    if scan_text:
+                        # Note: shadowed text (adding a 'stroke' outline) can
+                        # significantly slow down the rendering.
+                        # Temp solution: render a slight 1px shadow behind the text
+                        # TODO: Replace the instructions_text with a disappearing
+                        # toast/popup (see: QR Brightness UI)?
+                        draw = ImageDraw.Draw(frame)
+                        draw.text(xy=(
+                                    int(self.renderer.canvas_width/2 + 2),
+                                    self.renderer.canvas_height - GUIConstants.EDGE_PADDING + 2
+                                 ),
+                                 text=scan_text,
+                                 fill="black",
+                                 font=instructions_font,
+                                 anchor="ms")
+
+                        # Render the onscreen instructions
+                        draw.text(xy=(
+                                    int(self.renderer.canvas_width/2),
+                                    self.renderer.canvas_height - GUIConstants.EDGE_PADDING
+                                 ),
+                                 text=scan_text,
+                                 fill=GUIConstants.BODY_FONT_COLOR,
+                                 font=instructions_font,
+                                 anchor="ms")
+
+                    else:
+                        # Render the progress bar
+                        rectangle = Image.new('RGBA', (self.renderer.canvas_width - 2*GUIConstants.EDGE_PADDING, GUIConstants.BUTTON_HEIGHT), (0, 0, 0, 0))
+                        draw = ImageDraw.Draw(rectangle)
+
+                        # Start with a background rounded rectangle, same dims as the buttons
+                        overlay_color = (0, 0, 0, 191)  # opacity ranges from 0-255
+                        draw.rounded_rectangle(
+                            (
+                                (0, 0),
+                                (rectangle.width, rectangle.height)
+                            ),
+                            fill=overlay_color,
+                            radius=8,
+                            outline=overlay_color,
+                            width=2,
+                        )
+
+                        progress_bar_thickness = 4
+                        progress_bar_width = rectangle.width - 2*GUIConstants.EDGE_PADDING - progress_text_width - int(GUIConstants.EDGE_PADDING/2)
+                        progress_bar_xy = (
+                                (GUIConstants.EDGE_PADDING, int((rectangle.height - progress_bar_thickness) / 2)),
+                                (GUIConstants.EDGE_PADDING + progress_bar_width, int(rectangle.height + progress_bar_thickness) / 2)
+                            )
+                        draw.rounded_rectangle(
+                            progress_bar_xy,
+                            fill=GUIConstants.INACTIVE_COLOR,
+                            radius=8
+                        )
+
+                        progress_percentage = self.decoder.get_percent_complete(weight_mixed_frames=True)
+                        draw.rounded_rectangle(
+                            (
+                                progress_bar_xy[0],
+                                (GUIConstants.EDGE_PADDING + int(progress_percentage * progress_bar_width / 100.0), progress_bar_xy[1][1])
+                            ),
+                            fill=GUIConstants.GREEN_INDICATOR_COLOR,
+                            radius=8
+                        )
+
+                        # TRANSLATOR_NOTE: Inserts the percentage value of the animated QR scan progress
+                        text = _("{}%").format(progress_percentage)
+
+                        draw.text(
+                            xy=(rectangle.width - GUIConstants.EDGE_PADDING, int(rectangle.height / 2)),
+                            text=text,
+                            fill=GUIConstants.BODY_FONT_COLOR,
+                            font=instructions_font,
+                            anchor="rm",  # right-justified, middle
+                        )
+
+                        frame.paste(rectangle, (GUIConstants.EDGE_PADDING, self.renderer.canvas_height - GUIConstants.EDGE_PADDING - rectangle.height), rectangle)
+
+                        # Render the dot to indicate successful QR frame read
+                        indicator_size = 10
+                        status_color_map = {
+                            ScanScreen.FRAME__ADDED_PART: GUIConstants.SUCCESS_COLOR,
+                            ScanScreen.FRAME__REPEATED_PART: GUIConstants.INACTIVE_COLOR,
+                            ScanScreen.FRAME__MISS: None,
+                        }
+                        status_color = status_color_map.get(self.frame_decode_status.cur_count)
+                        if status_color:
+                            # Good! Most recent frame successfully decoded.
+                            # Draw the onscreen indicator dot
                             draw = ImageDraw.Draw(frame)
-                            draw.text(xy=(
-                                        int(self.renderer.canvas_width/2 + 2),
-                                        self.renderer.canvas_height - GUIConstants.EDGE_PADDING + 2
-                                     ),
-                                     text=scan_text,
-                                     fill="black",
-                                     font=instructions_font,
-                                     anchor="ms")
-
-                            # Render the onscreen instructions
-                            draw.text(xy=(
-                                        int(self.renderer.canvas_width/2),
-                                        self.renderer.canvas_height - GUIConstants.EDGE_PADDING
-                                     ),
-                                     text=scan_text,
-                                     fill=GUIConstants.BODY_FONT_COLOR,
-                                     font=instructions_font,
-                                     anchor="ms")
-
-                        else:
-                            # Render the progress bar
-                            rectangle = Image.new('RGBA', (self.renderer.canvas_width - 2*GUIConstants.EDGE_PADDING, GUIConstants.BUTTON_HEIGHT), (0, 0, 0, 0))
-                            draw = ImageDraw.Draw(rectangle)
-
-                            # Start with a background rounded rectangle, same dims as the buttons
-                            overlay_color = (0, 0, 0, 191)  # opacity ranges from 0-255
-                            draw.rounded_rectangle(
+                            draw.ellipse(
                                 (
-                                    (0, 0),
-                                    (rectangle.width, rectangle.height)
+                                    (self.renderer.canvas_width - GUIConstants.EDGE_PADDING - indicator_size, self.renderer.canvas_height - GUIConstants.EDGE_PADDING - GUIConstants.BUTTON_HEIGHT - GUIConstants.COMPONENT_PADDING - indicator_size),
+                                    (self.renderer.canvas_width - GUIConstants.EDGE_PADDING, self.renderer.canvas_height - GUIConstants.EDGE_PADDING - GUIConstants.BUTTON_HEIGHT - GUIConstants.COMPONENT_PADDING)
                                 ),
-                                fill=overlay_color,
-                                radius=8,
-                                outline=overlay_color,
-                                width=2,
+                                fill=status_color,
+                                outline="black",
+                                width=1,
                             )
 
-                            progress_bar_thickness = 4
-                            progress_bar_width = rectangle.width - 2*GUIConstants.EDGE_PADDING - progress_text_width - int(GUIConstants.EDGE_PADDING/2)
-                            progress_bar_xy = (
-                                    (GUIConstants.EDGE_PADDING, int((rectangle.height - progress_bar_thickness) / 2)),
-                                    (GUIConstants.EDGE_PADDING + progress_bar_width, int(rectangle.height + progress_bar_thickness) / 2)
-                                )
-                            draw.rounded_rectangle(
-                                progress_bar_xy,
-                                fill=GUIConstants.INACTIVE_COLOR,
-                                radius=8
-                            )
-
-                            progress_percentage = self.decoder.get_percent_complete(weight_mixed_frames=True)
-                            draw.rounded_rectangle(
-                                (
-                                    progress_bar_xy[0],
-                                    (GUIConstants.EDGE_PADDING + int(progress_percentage * progress_bar_width / 100.0), progress_bar_xy[1][1])
-                                ),
-                                fill=GUIConstants.GREEN_INDICATOR_COLOR,
-                                radius=8
-                            )
-
-                            # TRANSLATOR_NOTE: Inserts the percentage value of the animated QR scan progress
-                            text = _("{}%").format(progress_percentage)
-
-                            draw.text(
-                                xy=(rectangle.width - GUIConstants.EDGE_PADDING, int(rectangle.height / 2)),
-                                text=text,
-                                fill=GUIConstants.BODY_FONT_COLOR,
-                                font=instructions_font,
-                                anchor="rm",  # right-justified, middle
-                            )
-
-                            frame.paste(rectangle, (GUIConstants.EDGE_PADDING, self.renderer.canvas_height - GUIConstants.EDGE_PADDING - rectangle.height), rectangle)
-
-                            # Render the dot to indicate successful QR frame read
-                            indicator_size = 10
-                            status_color_map = {
-                                ScanScreen.FRAME__ADDED_PART: GUIConstants.SUCCESS_COLOR,
-                                ScanScreen.FRAME__REPEATED_PART: GUIConstants.INACTIVE_COLOR,
-                                ScanScreen.FRAME__MISS: None,
-                            }
-                            status_color = status_color_map.get(self.frame_decode_status.cur_count)
-                            if status_color:
-                                # Good! Most recent frame successfully decoded.
-                                # Draw the onscreen indicator dot
-                                draw = ImageDraw.Draw(frame)
-                                draw.ellipse(
-                                    (
-                                        (self.renderer.canvas_width - GUIConstants.EDGE_PADDING - indicator_size, self.renderer.canvas_height - GUIConstants.EDGE_PADDING - GUIConstants.BUTTON_HEIGHT - GUIConstants.COMPONENT_PADDING - indicator_size),
-                                        (self.renderer.canvas_width - GUIConstants.EDGE_PADDING, self.renderer.canvas_height - GUIConstants.EDGE_PADDING - GUIConstants.BUTTON_HEIGHT - GUIConstants.COMPONENT_PADDING)
-                                    ),
-                                    fill=status_color,
-                                    outline="black",
-                                    width=1,
-                                )
-
-                        self.renderer.show_image(frame, show_direct=True)
-
-                if self.camera._video_stream is None:
-                    break
+                    self.renderer.show_image(frame, show_direct=True)
 
 
     def _run(self):
@@ -235,12 +239,14 @@ class ScanScreen(BaseScreen):
         start_time = time.time()
         while True:
             frame = self.camera.read_video_stream()
+            if self.preview not in self.threads:
+                self.preview.render_once()  # the Pico's camera gives no frame without a QR code in it
             if frame is not None:
                 status = self.decoder.add_image(frame)
 
                 num_frames += 1
                 decoder_fps = f"{num_frames / (time.time() - start_time):0.2f}"
-                self.threads[0].decoder_fps = decoder_fps
+                self.preview.decoder_fps = decoder_fps
 
                 if status in (DecodeQRStatus.COMPLETE, DecodeQRStatus.INVALID):
                     self.camera.stop_video_stream_mode()

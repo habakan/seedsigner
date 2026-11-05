@@ -11,8 +11,8 @@ except ImportError:  # CPython, testing: pico/tests/gfx_sim.py stands in
 W, H = _gfx.WIDTH, _gfx.HEIGHT
 
 NAMES = {"black": (0, 0, 0), "white": (255, 255, 255), "red": (255, 0, 0), "green": (0, 128, 0),
-         "blue": (0, 0, 255), "orange": (255, 165, 0), "yellow": (255, 255, 0), "gray": (128, 128, 128),
-         "grey": (128, 128, 128)}
+         "blue": (0, 0, 255), "orange": (255, 165, 0), "darkorange": (255, 140, 0), "yellow": (255, 255, 0),
+         "gray": (128, 128, 128), "grey": (128, 128, 128)}
 
 
 class Resampling:

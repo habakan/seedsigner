@@ -14,8 +14,8 @@ class Thread:
         self.name, self.daemon, self._alive = name, daemon, False
 
     def start(self):
-        # The rp2 port runs one thread besides the main one, on core1 (patches/); SeedSigner's all end on
-        # their own or with their screen, so a second waits for the first
+        # The rp2 port runs one thread besides the main one, on core1 (patches/: a GIL, a 16 KB static
+        # stack); SeedSigner's all end on their own or with their screen, so a second waits for the first
         deadline = time.ticks_add(time.ticks_ms(), 30000)
         while True:
             self._alive = True  # before core1 can run it and clear it; undone if it never starts

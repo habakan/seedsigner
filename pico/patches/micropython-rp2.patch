@@ -1,3 +1,19 @@
+diff --git a/ports/rp2/CMakeLists.txt b/ports/rp2/CMakeLists.txt
+index ee6f1b8..e81fddf 100644
+--- a/ports/rp2/CMakeLists.txt
++++ b/ports/rp2/CMakeLists.txt
+@@ -562,8 +562,10 @@ else(PICO_RP2040)
+ endif()
+ 
+ if(PICO_RP2350)
++    # 12 KB of RAM below scratch Y: SeedSigner's screens call the camera's QR reader 20-odd Python calls deep,
++    # and past a 12 KB stack it overwrote the GC heap's top
+     target_link_options(${MICROPY_TARGET} PRIVATE
+-        -Wl,--defsym=__micropy_extra_stack__=4096
++        -Wl,--defsym=__micropy_extra_stack__=12288
+     )
+ endif()
+ 
 diff --git a/ports/rp2/mpconfigport.h b/ports/rp2/mpconfigport.h
 index 3084531..833026c 100644
 --- a/ports/rp2/mpconfigport.h
@@ -33,7 +49,7 @@ index c63354c..ba8c24a 100644
  
  extern int mp_interrupt_char;
 diff --git a/ports/rp2/mpthreadport.c b/ports/rp2/mpthreadport.c
-index 043a878..02df4f9 100644
+index 043a878..c0476f7 100644
 --- a/ports/rp2/mpthreadport.c
 +++ b/ports/rp2/mpthreadport.c
 @@ -45,6 +45,13 @@ static void *core1_arg = NULL;
@@ -43,7 +59,7 @@ index 043a878..02df4f9 100644
 +// core1 runs one thread at a time, so one static stack serves them all: allocating each from the GC heap
 +// fails once the heap fragments, and a MemoryError there left core1 claimed by a thread that never started.
 +#ifndef MICROPY_HW_CORE1_STACK_BYTES
-+#define MICROPY_HW_CORE1_STACK_BYTES (8 * 1024)
++#define MICROPY_HW_CORE1_STACK_BYTES (16 * 1024)
 +#endif
 +static uint32_t core1_static_stack[MICROPY_HW_CORE1_STACK_BYTES / sizeof(uint32_t)];
 +
@@ -75,7 +91,7 @@ index 043a878..02df4f9 100644
          gc_collect_root((void **)&core1_arg, 1);
      }
      if (get_core_num() == 1) {
-@@ -132,18 +143,10 @@ mp_uint_t mp_thread_create(void *(*entry)(void *), void *arg, size_t *stack_size
+@@ -132,25 +143,18 @@ mp_uint_t mp_thread_create(void *(*entry)(void *), void *arg, size_t *stack_size
      core1_entry = entry;
      core1_arg = arg;
  
@@ -98,3 +114,13 @@ index 043a878..02df4f9 100644
  
      // Create thread on core1.
      multicore_reset_core1();
+     multicore_launch_core1_with_stack(core1_entry_wrapper, core1_stack, *stack_size);
+ 
+-    // Adjust stack_size to provide room to recover from hitting the limit.
+-    *stack_size -= 512;
++    // Adjust stack_size to provide room to recover from hitting the limit. The stack is static, so going
++    // past it overwrites what lies below: 2 KB leaves room for C deeper than 512 bytes.
++    *stack_size -= 2048;
+ 
+     return 2; // mp_thread_get_id() result for core 1
+ }

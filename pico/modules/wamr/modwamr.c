@@ -10,6 +10,9 @@
 #define WAMR_POOL_KB 116 /* parser-no-ur.wasm peaks at 107 KB, its buffers being fixed; the camera's frame fits too */
 #endif
 static char pool[WAMR_POOL_KB * 1024];
+/* The classic interpreter rewrites the module's bytes and keeps pointers into them: a static copy, as one
+ * instance lives at a time, where 8 KB from the fragmented heap may not be found (parser-no-ur.wasm) */
+static uint8_t module_copy[9 * 1024];
 static bool runtime_up;
 static wasm_module_t live_mod;
 static wasm_module_inst_t live_inst;
@@ -40,7 +43,6 @@ void wamr_pool_return(void) {
 
 typedef struct {
     mp_obj_base_t base;
-    mp_obj_t wasm; /* the classic interpreter keeps pointers into these bytes, which it rewrote */
     wasm_module_inst_t inst;
     wasm_exec_env_t env;
 } instance_t;
@@ -62,9 +64,9 @@ static mp_obj_t instance_make_new(const mp_obj_type_t *type, size_t n_args, size
     instance_t *self = mp_obj_malloc(instance_t, type);
     mp_buffer_info_t buf;
     mp_get_buffer_raise(args[0], &buf, MP_BUFFER_READ);
-    self->wasm = mp_obj_new_bytearray(buf.len, buf.buf);
-    mp_get_buffer_raise(self->wasm, &buf, MP_BUFFER_RW);
-    if (!(live_mod = wasm_runtime_load(buf.buf, buf.len, err, sizeof(err)))) {
+    if (buf.len > sizeof(module_copy)) mp_raise_ValueError(MP_ERROR_TEXT("module larger than its copy"));
+    memcpy(module_copy, buf.buf, buf.len);
+    if (!(live_mod = wasm_runtime_load(module_copy, buf.len, err, sizeof(err)))) {
         mp_raise_msg_varg(&mp_type_RuntimeError, MP_ERROR_TEXT("WAMR: %s"), err);
     }
     if (!(live_inst = wasm_runtime_instantiate(live_mod, 8192, 0, err, sizeof(err)))) {

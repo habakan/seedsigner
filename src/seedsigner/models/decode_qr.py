@@ -49,7 +49,8 @@ class DecodeQR:
 
 
     def add_image(self, image):
-        data = DecodeQR.extract_qr_data(image, is_binary=True)
+        # The Pico's camera reads the QR code itself and hands over its bytes instead of a frame
+        data = image if isinstance(image, (bytes, bytearray)) else DecodeQR.extract_qr_data(image, is_binary=True)
         if data == None:
             return DecodeQRStatus.FALSE
 

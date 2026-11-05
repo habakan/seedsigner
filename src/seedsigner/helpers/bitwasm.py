@@ -190,6 +190,11 @@ class Wordlist:
 
 
 
+# Read once a review, right after it, while the signer keeps its own copy: one buffer taken at import, as a
+# fresh 8.5 KB may not be found in the Pico's heap by the time a PSBT is scanned
+_plan = bytearray(PLAN_SIZE)
+
+
 class BitwasmReview:
     """
     signer.wasm's review of one psbt for one seed: `display` is what it would sign.
@@ -227,12 +232,12 @@ class BitwasmReview:
         if rc != 0:
             raise BitwasmError(f"parser: {P_ERRORS.get(rc, rc)}")
 
-        plan = bytes(P.memory[P.parser_plan():P.parser_plan() + PLAN_SIZE])
-        self.plan = plan
+        _plan[:] = memoryview(P.memory)[P.parser_plan():P.parser_plan() + PLAN_SIZE]  # no slice copy
+        self.plan = plan = _plan
         prevtxs = []
         for i in range(plan[PLAN_N_INPUTS]):
             n, off = P.parser_prevtx_len(i), at + P.parser_prevtx_off(i)
-            prevtxs.append(bytes(P.memory[off:off + n]) if n else None)
+            prevtxs.append(bytes(memoryview(P.memory)[off:off + n]) if n else None)
         S.set_plan(plan).set_prevtxs(prevtxs)
         try:
             self.review = S.review()
@@ -247,7 +252,7 @@ class BitwasmReview:
         if self._review() != self.display:
             raise BitwasmError("the transaction changed after it was reviewed")
         S = use(self.seed)
-        nonces = bytes(P.memory[P.parser_nonces():P.parser_nonces() + MAX_INPUTS * NONCE_SIZE])
+        nonces = bytes(memoryview(P.memory)[P.parser_nonces():P.parser_nonces() + MAX_INPUTS * NONCE_SIZE])
         try:
             sigs = S.sign(nonces)
         except SignerError as e:
@@ -262,4 +267,4 @@ class BitwasmReview:
         n = P.parser_finalize(len(sigs))
         if n < 0:
             raise BitwasmError(f"parser: {P_ERRORS.get(-n, -n)}")
-        return bytes(P.memory[P.parser_output():P.parser_output() + n])
+        return bytes(memoryview(P.memory)[P.parser_output():P.parser_output() + n])

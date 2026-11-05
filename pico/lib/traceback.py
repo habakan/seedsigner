@@ -7,6 +7,8 @@ import sys
 def format_exc(exc=None, *args, **kwargs):
     if exc is None:
         return ""
+    import gc
+    gc.collect()  # SeedSigner's error screen formats it right after whatever failed, often for want of memory
     buf = io.StringIO()
     sys.print_exception(exc, buf)
     return buf.getvalue()
