@@ -54,6 +54,46 @@ def glyph(x, y, w, h, alpha, c, cx0, cy0, cx1, cy1):
                 canvas_bytes[d] = c if a == 15 else _blend(canvas_bytes[d], c, a)
 
 
+def blit(src, w, h, x, y, cx0, cy0, cx1, cy1):
+    cx0, cy0, cx1, cy1 = max(0, cx0), max(0, cy0), min(WIDTH, cx1), min(HEIGHT, cy1)
+    for j in range(h):
+        py = y + j
+        if cy0 <= py < cy1:
+            i0, i1 = max(0, cx0 - x), min(w, cx1 - x)
+            if i1 > i0:
+                canvas_bytes[py * WIDTH + x + i0:py * WIDTH + x + i1] = src[j * w + i0:j * w + i1]
+
+
+def save(x0, y0, x1, y1):
+    x0, y0, x1, y1 = max(0, x0), max(0, y0), min(WIDTH, x1), min(HEIGHT, y1)
+    out = bytearray()
+    for y in range(y0, y1):
+        row = canvas_bytes[y * WIDTH:(y + 1) * WIDTH]
+        x = x0
+        while x < x1:
+            run = 1
+            while x + run < x1 and run < 255 and row[x + run] == row[x]:
+                run += 1
+            out += bytes((run, row[x]))
+            x += run
+    return bytes(out)
+
+
+def restore(data, w, x, y, cx0, cy0, cx1, cy1):
+    cx0, cy0, cx1, cy1 = max(0, cx0), max(0, cy0), min(WIDTH, cx1), min(HEIGHT, cy1)
+    px = py = 0
+    for k in range(0, len(data) - 1, 2):
+        run, c = data[k], data[k + 1]
+        yy = y + py
+        if cy0 <= yy < cy1:
+            a, b = max(cx0, x + px), min(cx1, x + px + run)
+            if b > a:
+                canvas_bytes[yy * WIDTH + a:yy * WIDTH + b] = bytes([c]) * (b - a)
+        px += run
+        if px >= w:
+            px, py = 0, py + 1
+
+
 def show(*args):
     global shows
     shows += 1

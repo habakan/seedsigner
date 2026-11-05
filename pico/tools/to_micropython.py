@@ -2,7 +2,10 @@
 Rewrites SeedSigner's Python for MicroPython, which keeps no annotations and so cannot run @dataclass:
 each dataclass gets the __init__ the decorator would have made, and annotations are dropped.
 
-    python3 pico/tools/to_micropython.py OUT_DIR SRC_DIR...
+    python3 pico/tools/to_micropython.py [--cpython] OUT_DIR SRC_DIR...
+
+--cpython leaves traceback calls alone, which only pico/lib/traceback.py takes an exception in, so the
+result can be checked against the test suite on CPython.
 
 Fields are resolved across files by class name, bases first, as dataclasses orders them.
 """
@@ -112,6 +115,8 @@ class Strip(ast.NodeTransformer):
         self.fields, self.registry = fields, registry
 
     def visit_ClassDef(self, node):
+        # list[Destination] as a base is list to CPython at runtime; MicroPython cannot subscript a type
+        node.bases = [b.value if isinstance(b, ast.Subscript) else b for b in node.bases]
         if is_dataclass(node):
             fields = self.fields[id(node)]
             node.decorator_list = [d for d in node.decorator_list if not (
@@ -157,7 +162,37 @@ class Strip(ast.NodeTransformer):
 
     def visit_FunctionDef(self, node):
         node.returns = None
+        if not CPYTHON and any(a.arg == "e" for a in node.args.args):  # handle_exception formats e outside its except
+            self.hand_exception(node.body, "e")
         self.generic_visit(node)
+        return node
+
+    @staticmethod
+    def hand_exception(body, name):
+        """traceback.print_exc() and format_exc() find the exception with sys.exc_info, which the rp2
+        port lacks; they are handed it instead (pico/lib/traceback.py)."""
+        for sub in ast.walk(ast.Module(body, [])):
+            f = getattr(sub, "func", None)
+            if (isinstance(sub, ast.Call) and isinstance(f, ast.Attribute) and f.attr in ("print_exc", "format_exc")
+                    and isinstance(f.value, ast.Name) and f.value.id == "traceback" and not sub.args):
+                sub.args = [ast.Name(name)]
+
+    def visit_ExceptHandler(self, node):
+        if CPYTHON:
+            self.generic_visit(node)
+            return node
+        if node.name is None:
+            if node.type is None:  # a bare except is BaseException's, which can take a name
+                node.type = ast.Name("BaseException")
+            node.name = "_exc"
+        self.hand_exception(node.body, node.name)
+        self.generic_visit(node)
+        return node
+
+    def visit_Name(self, node):
+        # MicroPython raises OSError, with an errno, where CPython raises these subclasses of it
+        if node.id in ("FileNotFoundError", "PermissionError", "IsADirectoryError", "NotADirectoryError", "FileExistsError"):
+            node.id = "OSError"
         return node
 
     def visit_Call(self, node):
@@ -176,9 +211,17 @@ class Strip(ast.NodeTransformer):
         return node
 
 
+CPYTHON = False
+
+
 def main():
-    out, srcs = pathlib.Path(sys.argv[1]), [pathlib.Path(p) for p in sys.argv[2:]]
-    files = [(s, p) for s in srcs for p in sorted(s.rglob("*.py"))]
+    global CPYTHON
+    args = sys.argv[1:]
+    if args and args[0] == "--cpython":
+        CPYTHON, args = True, args[1:]
+    out, srcs = pathlib.Path(args[0]), [pathlib.Path(p) for p in args[1:]]
+    # resources/ holds the translations' own tooling, not anything SeedSigner runs
+    files = [(s, p) for s in srcs for p in sorted(s.rglob("*.py")) if "resources" not in p.relative_to(s).parts]
     trees = {p: ast.parse(p.read_text(), str(p)) for _, p in files}
     registry = Registry()
     for p, t in trees.items():

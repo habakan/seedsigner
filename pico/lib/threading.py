@@ -15,6 +15,9 @@ class Thread:
 
     def start(self):
         self._alive = True
+        # The rp2 port's default thread stack overflows on SeedSigner's import chains (the preload thread)
+        if hasattr(_thread, "stack_size"):
+            _thread.stack_size(16 * 1024)
         _thread.start_new_thread(self._bootstrap, ())
 
     def _bootstrap(self):

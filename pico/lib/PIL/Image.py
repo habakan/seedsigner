@@ -92,9 +92,10 @@ class Image:
         self.add(("img", im.snapshot(), x, y, im.size[0], im.size[1]))
 
     def snapshot(self):
-        """What this image is now, kept apart from what is drawn on it later."""
+        """What this image is now, kept apart from what is drawn on it later. The canvas's is its pixels,
+        run-length encoded by _gfx.save, since a raw copy is more than the fragmented heap can find."""
         if self.bound:
-            raise NotImplementedError("the canvas cannot be pasted; it is the framebuffer")
+            return [("rle", _gfx.save(0, 0, W, H), W)]
         return list(self.ops)
 
     def crop(self, box=None):
@@ -129,6 +130,9 @@ class Image:
     def filter(self, f):
         return self.copy()  # SHARPEN after a supersampled resize; the Pico draws at 1x
 
+    def putalpha(self, alpha):
+        pass  # the splash screen's fade-in; the Pico shows the logo at once
+
     def getbbox(self, *args, **kwargs):
         return (0, 0, self.size[0], self.size[1])
 
@@ -148,4 +152,12 @@ def alpha_composite(im1, im2):
 
 
 def open(fp, mode="r", formats=None):
-    raise OSError("no image files on the Pico yet")
+    """One of SeedSigner's images, as pico/tools/make_images.py made it; the path names it."""
+    import sys
+    parts = str(fp).replace("\\", "/").split("/img/")[-1].rsplit(".", 1)[0].replace("-", "_").split("/")
+    key = "pico_images.i_" + "_".join(parts)
+    __import__(key)
+    m = sys.modules[key]
+    out = Image("RGB", (m.W, m.H), None)
+    out.ops.append(("pix", m.PIXELS, m.W, m.H))
+    return out

@@ -145,23 +145,79 @@ static mp_obj_t gfx_glyph(size_t n_args, const mp_obj_t *args) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(gfx_glyph_obj, 10, 10, gfx_glyph);
 
-/* blit(src, w, h, x, y): pastes w x h palette indices at (x, y), clipped */
+/* blit(src, w, h, x, y, cx0, cy0, cx1, cy1): pastes w x h palette indices at (x, y), clipped to the box */
 static mp_obj_t gfx_blit(size_t n_args, const mp_obj_t *args) {
     (void)n_args;
     mp_buffer_info_t s;
     mp_get_buffer_raise(args[0], &s, MP_BUFFER_READ);
     int w = mp_obj_get_int(args[1]), h = mp_obj_get_int(args[2]);
     int x = mp_obj_get_int(args[3]), y = mp_obj_get_int(args[4]);
+    int cx0 = clampi(mp_obj_get_int(args[5]), 0, W), cy0 = clampi(mp_obj_get_int(args[6]), 0, H);
+    int cx1 = clampi(mp_obj_get_int(args[7]), 0, W), cy1 = clampi(mp_obj_get_int(args[8]), 0, H);
     if ((size_t)(w * h) > s.len) mp_raise_ValueError(MP_ERROR_TEXT("image too short"));
     for (int j = 0; j < h; j++) {
         int py = y + j;
-        if (py < 0 || py >= H) continue;
-        int i0 = x < 0 ? -x : 0, i1 = x + w > W ? W - x : w;
+        if (py < cy0 || py >= cy1) continue;
+        int i0 = x < cx0 ? cx0 - x : 0, i1 = x + w > cx1 ? cx1 - x : w;
         if (i1 > i0) memcpy(canvas + py * W + x + i0, (const uint8_t *)s.buf + j * w + i0, (size_t)(i1 - i0));
     }
     return mp_const_none;
 }
-static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(gfx_blit_obj, 5, 5, gfx_blit);
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(gfx_blit_obj, 9, 9, gfx_blit);
+
+/* save(x0, y0, x1, y1): that part of the canvas run-length encoded, (count, index) pairs row by row; a
+ * copy of the canvas, as a toast takes before it draws, is then a few KB rather than 57.6 */
+static mp_obj_t gfx_save(size_t n_args, const mp_obj_t *args) {
+    (void)n_args;
+    int x0 = clampi(mp_obj_get_int(args[0]), 0, W), y0 = clampi(mp_obj_get_int(args[1]), 0, H);
+    int x1 = clampi(mp_obj_get_int(args[2]), 0, W), y1 = clampi(mp_obj_get_int(args[3]), 0, H);
+    size_t n = 0;
+    for (int pass = 0; pass < 2; pass++) {
+        uint8_t *out = NULL;
+        vstr_t v;
+        if (pass) vstr_init_len(&v, n), out = (uint8_t *)v.buf;
+        size_t k = 0;
+        for (int y = y0; y < y1; y++) {
+            const uint8_t *row = canvas + y * W;
+            for (int x = x0; x < x1;) {
+                int run = 1;
+                while (x + run < x1 && run < 255 && row[x + run] == row[x]) run++;
+                if (out) out[k] = (uint8_t)run, out[k + 1] = row[x];
+                k += 2, x += run;
+            }
+        }
+        if (!pass) n = k;
+        else return mp_obj_new_bytes_from_vstr(&v);
+    }
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(gfx_save_obj, 4, 4, gfx_save);
+
+/* restore(data, w, x, y, cx0, cy0, cx1, cy1): save()'s w-wide rows put back at (x, y), clipped to the box */
+static mp_obj_t gfx_restore(size_t n_args, const mp_obj_t *args) {
+    (void)n_args;
+    mp_buffer_info_t d;
+    mp_get_buffer_raise(args[0], &d, MP_BUFFER_READ);
+    int w = mp_obj_get_int(args[1]), x = mp_obj_get_int(args[2]), y = mp_obj_get_int(args[3]);
+    int cx0 = clampi(mp_obj_get_int(args[4]), 0, W), cy0 = clampi(mp_obj_get_int(args[5]), 0, H);
+    int cx1 = clampi(mp_obj_get_int(args[6]), 0, W), cy1 = clampi(mp_obj_get_int(args[7]), 0, H);
+    const uint8_t *p = d.buf;
+    int px = 0, py = 0;
+    for (size_t k = 0; k + 1 < d.len; k += 2) {
+        int run = p[k];
+        uint8_t c = p[k + 1];
+        int yy = y + py;
+        if (yy >= cy0 && yy < cy1) {
+            int a = x + px, b = a + run;
+            a = a < cx0 ? cx0 : a, b = b > cx1 ? cx1 : b;
+            if (b > a) memset(canvas + yy * W + a, c, (size_t)(b - a));
+        }
+        px += run;
+        if (px >= w) px = 0, py++;
+    }
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(gfx_restore_obj, 8, 8, gfx_restore);
 
 /* colour(r, g, b): the palette index for that colour */
 static mp_obj_t gfx_colour(mp_obj_t r, mp_obj_t g, mp_obj_t b) {
@@ -183,6 +239,8 @@ static const mp_rom_map_elem_t globals[] = {
     { MP_ROM_QSTR(MP_QSTR_blit), MP_ROM_PTR(&gfx_blit_obj) },
     { MP_ROM_QSTR(MP_QSTR_canvas), MP_ROM_PTR(&gfx_canvas_obj) },
     { MP_ROM_QSTR(MP_QSTR_colour), MP_ROM_PTR(&gfx_colour_obj) },
+    { MP_ROM_QSTR(MP_QSTR_save), MP_ROM_PTR(&gfx_save_obj) },
+    { MP_ROM_QSTR(MP_QSTR_restore), MP_ROM_PTR(&gfx_restore_obj) },
     { MP_ROM_QSTR(MP_QSTR_WIDTH), MP_ROM_INT(W) },
     { MP_ROM_QSTR(MP_QSTR_HEIGHT), MP_ROM_INT(H) },
 };

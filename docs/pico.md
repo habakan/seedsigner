@@ -142,6 +142,16 @@ SeedSigner's own screens draw on the Pico's ST7789 through a PIL of the Pico's (
 `pico/tests/screen.py` draws the main menu on the device in 0.47 s, leaving 106 KB of heap. English only
 for now; QR display (`helpers/qr.py`) is a stub until it draws with qrcodegen in C.
 
+`main.py` (`make device-install`) runs `Controller.start()` itself: the splash screen, then the main menu
+driven by the buttons. Getting there took:
+
+- Images (`resources/img`) converted to palette indices at build time (`pico/tools/make_images.py`).
+- A copy of the canvas, as a toast takes, run-length encoded by `_gfx.save` rather than a 57.6 KB buffer.
+- Version information from git at build time (`pico_version.py`), as SeedSigner OS has its version.json.
+- `sys.exc_info` is missing on the rp2 port, so `to_micropython.py` hands `traceback.print_exc` and
+  `format_exc` the exception (`--cpython` skips that, to run the tests on the transformed tree: all pass).
+- A 16 KB stack for threads, which the preload thread's imports need.
+
 ## What the Pico build gives up
 
 Whatever `signer.wasm` does not do: Electrum seeds, non-English wordlists, legacy P2PKH, custom

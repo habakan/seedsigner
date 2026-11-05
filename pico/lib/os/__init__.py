@@ -27,3 +27,20 @@ for _n in ("join", "exists", "isdir", "isfile", "dirname", "basename", "abspath"
 
 
 environ = {}  # MicroPython has no environment; Settings writes LANGUAGE here for gettext
+
+
+class _NoShell:
+    def read(self):
+        return ""
+
+    def close(self):
+        return 1
+
+
+def popen(cmd, mode="r"):
+    # No shell on the Pico: a command prints nothing, so version.py falls back to "version not detected"
+    return _NoShell()
+
+
+def getenv(key, default=None):
+    return environ.get(key, default)

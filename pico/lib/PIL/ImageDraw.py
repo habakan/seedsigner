@@ -99,6 +99,12 @@ def replay(ops, dx, dy, clip):
             for gx, gy, w, h, off in font.glyphs(text, x, y, anchor):
                 _gfx.glyph(dx + gx, dy + gy, w, h, bits[off:off + ((w + 1) // 2) * h], c,
                            clip[0], clip[1], clip[2], clip[3])
+        elif k == "rle":
+            _, data, w = op
+            _gfx.restore(data, w, dx, dy, clip[0], clip[1], clip[2], clip[3])
+        elif k == "pix":
+            _, pixels, w, h = op
+            _gfx.blit(pixels, w, h, dx, dy, clip[0], clip[1], clip[2], clip[3])
         elif k == "img":
             _, sub, x, y, w, h = op
             replay(sub, dx + x, dy + y, _clip(clip, (dx + x, dy + y, dx + x + w, dy + y + h)))

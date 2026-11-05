@@ -35,10 +35,14 @@ py:
 	cp -R lib/. $(OUT)/py/
 	cp $(MPY_DIR)/lib/micropython-lib/python-stdlib/hmac/hmac.py \
 	  $(MPY_DIR)/lib/micropython-lib/python-stdlib/base64/base64.py \
-	  $(MPY_DIR)/lib/micropython-lib/python-stdlib/zlib/zlib.py $(OUT)/py/
+	  $(MPY_DIR)/lib/micropython-lib/python-stdlib/zlib/zlib.py \
+	  $(MPY_DIR)/lib/micropython-lib/python-stdlib/datetime/datetime.py $(OUT)/py/
 	cp $(MPY_DIR)/lib/micropython-lib/python-stdlib/os-path/os/path.py $(OUT)/py/os/
 	rm $(OUT)/py/seedsigner/hardware/displays/st7789_mpy.py
 	../.venv/bin/python tools/make_fonts.py $(OUT)/py/pico_fonts ../src/seedsigner/resources/fonts fonts_used.json
+	../.venv/bin/python tools/make_images.py $(OUT)/py/pico_images ../src/seedsigner/resources/img > /dev/null
+	printf 'NAME = "%s"\nFORK = "%s"\nSHORT_COMMIT_HASH = "%s"\n' "$$(git describe --tags --exact-match 2>/dev/null || git rev-parse --abbrev-ref HEAD)" \
+	  "$$(git remote get-url origin | sed -E 's|.*[:/]([^/]+)/[^/]+$$|\1|')" "$$(git rev-parse --short HEAD)" > $(OUT)/py/pico_version.py
 	python3 -c "import sys; print('PARSER = ' + repr(open(sys.argv[1], 'rb').read()))" \
 	  ../src/seedsigner/resources/bitwasm/parser.wasm > $(OUT)/py/bitwasm_modules.py
 .PHONY: py
@@ -59,9 +63,10 @@ rp2: py
 	  USER_C_MODULES=$(abspath modules/micropython.cmake) FROZEN_MANIFEST=$(abspath manifest.py)
 .PHONY: rp2
 
-# The one file the device's filesystem needs: everything else is frozen into the firmware
+# The one file the device's filesystem needs: everything else is frozen into the firmware. It starts
+# SeedSigner; `import selftest` at the REPL checks the seed and PSBT code instead
 device-install:
-	echo "import selftest" > $(OUT)/main.py
+	printf 'from seedsigner.controller import Controller\nController.get_instance().start()\n' > $(OUT)/main.py
 	mpremote connect $(PORT) cp $(OUT)/main.py :main.py
 .PHONY: device-install
 
