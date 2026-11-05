@@ -49,8 +49,7 @@ class DecodeQR:
 
 
     def add_image(self, image):
-        # The Pico's camera reads the QR code itself and hands over its bytes instead of a frame
-        data = image if isinstance(image, (bytes, bytearray)) else DecodeQR.extract_qr_data(image, is_binary=True)
+        data = DecodeQR.extract_qr_data(image, is_binary=True)
         if data == None:
             return DecodeQRStatus.FALSE
 
@@ -323,7 +322,7 @@ class DecodeQR:
         if image is None:
             return None
 
-        from pyzbar import pyzbar  # the Pi's camera path; the Pico reads QR codes natively
+        from pyzbar import pyzbar  # imported here, so a build without zbar can still decode the data it is given
         from pyzbar.pyzbar import ZBarSymbol
         barcodes = pyzbar.decode(image, symbols=[ZBarSymbol.QRCODE], binary=is_binary)
 

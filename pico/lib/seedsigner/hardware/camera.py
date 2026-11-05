@@ -1,5 +1,5 @@
 """SeedSigner's Camera on the Pico: _camera captures and reads a QR code in C, so a "frame" from
-read_video_stream() is the code's bytes, or None, which DecodeQR.add_image() takes as they are."""
+read_video_stream() is the code's bytes, or None, which DecodeQR takes as they are (pico/lib/pico_boot.py)."""
 import _camera
 from PIL import Image
 

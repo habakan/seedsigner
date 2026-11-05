@@ -1,4 +1,3 @@
-import sys
 import math
 import time
 
@@ -379,10 +378,7 @@ class PSBTOverviewScreen(ButtonListScreen):
         image = image.resize((self.canvas_width, chart_height), Image.Resampling.LANCZOS)
         self.paste_images.append((image.filter(ImageFilter.SHARPEN), (self.chart_x, self.chart_y)))
 
-        # Pass input and output curves to the animation thread. Not on the Pico: each frame is the whole
-        # screen replayed band by band, and its line segments pile up in the canvas's drawing
-        if sys.implementation.name == "micropython":
-            return
+        # Pass input and output curves to the animation thread
         self.threads.append(
             PSBTOverviewScreen.TxExplorerAnimationThread(
                 inputs=input_curves,

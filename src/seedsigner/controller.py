@@ -1,7 +1,6 @@
 from datetime import datetime
 import logging
 import os
-import sys
 import time
 import traceback
 
@@ -68,21 +67,15 @@ class BackgroundImportThread(BaseThread):
             time_import('embit')
             time_import('seedsigner.helpers.embit_utils')
         except ImportError:
-            pass  # the Pico build has no embit
+            pass  # bitwasm-signer reviews and signs without it
 
         # Do costly initializations
         time_import('seedsigner.models.seed_storage')
         from seedsigner.models.seed_storage import SeedStorage
         Controller.get_instance()._storage = SeedStorage()
 
-        try:
-            time_import('numpy')  # used by PiVideoStream; by far the slowest import (2.29s)
-            time_import('seedsigner.hardware.pivideostream')
-        except ImportError:
-            pass  # the Pico's camera is not the Pi's
-
-        if sys.implementation.name == "micropython":
-            return  # the Pico's heap cannot hold every view's module at once; each loads when first used
+        time_import('numpy')  # used by PiVideoStream; by far the slowest import (2.29s)
+        time_import('seedsigner.hardware.pivideostream') 
 
         # Get MainMenuView ready to respond quickly
         time_import('seedsigner.views.scan_views')

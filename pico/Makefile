@@ -72,14 +72,14 @@ rp2: py patch
 # The one file the device's filesystem needs: everything else is frozen into the firmware. It starts
 # SeedSigner; `import selftest` at the REPL checks the seed and PSBT code instead
 device-install:
-	printf 'from seedsigner.controller import Controller\nController.get_instance().start()\n' > $(OUT)/main.py
+	printf 'import pico_boot\nfrom seedsigner.controller import Controller\nController.get_instance().start()\n' > $(OUT)/main.py
 	mpremote connect $(PORT) cp $(OUT)/main.py :main.py
 .PHONY: device-install
 
 # The same with buttons pressed and the screen read over USB serial (pico/lib/RPi/GPIO.py, tests/drive.py):
 # for development only, since a signer should take no input but its own buttons and camera
 device-install-dev:
-	printf 'import RPi.GPIO\nRPi.GPIO.serial_keys = True\nfrom seedsigner.controller import Controller\nController.get_instance().start()\n' > $(OUT)/main.py
+	printf 'import pico_boot\nimport RPi.GPIO\nRPi.GPIO.serial_keys = True\nfrom seedsigner.controller import Controller\nController.get_instance().start()\n' > $(OUT)/main.py
 	mpremote connect $(PORT) cp $(OUT)/main.py :main.py
 .PHONY: device-install-dev
 

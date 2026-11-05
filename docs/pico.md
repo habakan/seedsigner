@@ -182,8 +182,9 @@ RAM decided most of the way there:
 - Drawing: rounded rectangles, ellipses and text are drawn in C (a text op places its glyphs once, when
   recorded), and showing the canvas again sends only the box drawn on since. The main menu went from 237 to
   93 ms, moving its selection from 326 to 80 ms.
-- No thread runs beside the camera: ScanScreen draws its progress between reads, and the review's
-  animated chart is static. There is no camera preview yet.
+- Pico-only choices live in `pico/lib/pico_boot.py`, which main.py imports first, not in SeedSigner's
+  source: the preload thread only opens the seed storage, DecodeQR takes the camera's bytes, and ScanScreen
+  draws its progress between reads rather than in core1's thread. There is no camera preview yet.
 
 ## A regtest spend
 

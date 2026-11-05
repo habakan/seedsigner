@@ -1,4 +1,3 @@
-import sys
 import time
 
 from dataclasses import dataclass
@@ -71,9 +70,7 @@ class ScanScreen(BaseScreen):
             render_rect=self.render_rect,
             frame_decode_status=self.frames_decode_status,
         )
-        if sys.implementation.name != "micropython":
-            # The Pico draws it between camera reads instead: on its second core alongside them, it crashes
-            self.threads.append(self.preview)
+        self.threads.append(self.preview)
 
 
     class LivePreviewThread(BaseThread):
@@ -239,8 +236,9 @@ class ScanScreen(BaseScreen):
         start_time = time.time()
         while True:
             frame = self.camera.read_video_stream()
-            if self.preview not in self.threads:
-                self.preview.render_once()  # the Pico's camera gives no frame without a QR code in it
+            if not self.preview.is_alive():
+                # A preview not running in its own thread is drawn here, between reads
+                self.preview.render_once()
             if frame is not None:
                 status = self.decoder.add_image(frame)
 
