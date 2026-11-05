@@ -229,6 +229,26 @@ static mp_obj_t gfx_shape(size_t n_args, const mp_obj_t *args) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(gfx_shape_obj, 15, 15, gfx_shape);
 
+/* shade(x0, y0, x1, y1, c, a, cx0, cy0, cx1, cy1): blends colour c at a/15 over what the box holds, x1 and
+ * y1 exclusive: a translucent overlay, as SeedSigner dims all but a SeedQR zone */
+static mp_obj_t gfx_shade(size_t n_args, const mp_obj_t *args) {
+    (void)n_args;
+    int x0 = mp_obj_get_int(args[0]), y0 = mp_obj_get_int(args[1]), x1 = mp_obj_get_int(args[2]), y1 = mp_obj_get_int(args[3]);
+    uint8_t c = (uint8_t)mp_obj_get_int(args[4]);
+    int a = clampi(mp_obj_get_int(args[5]), 0, 15);
+    int cx0 = clampi(mp_obj_get_int(args[6]), 0, W), cy0 = CLIP_Y(args[7]);
+    int cx1 = clampi(mp_obj_get_int(args[8]), 0, W), cy1 = CLIP_Y(args[9]);
+    x0 = x0 > cx0 ? x0 : cx0, y0 = y0 > cy0 ? y0 : cy0, x1 = x1 < cx1 ? x1 : cx1, y1 = y1 < cy1 ? y1 : cy1;
+    if (!palette_up) palette_init();
+    for (int y = y0; y < y1; y++)
+        for (int x = x0; x < x1; x++) {
+            uint8_t *d = PX(x, y);
+            *d = a == 15 ? c : blend(*d, c, a);
+        }
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(gfx_shade_obj, 10, 10, gfx_shade);
+
 /* glyphs(placed, bitmaps, c, dx, dy, cx0, cy0, cx1, cy1): a line of text, as ImageDraw placed its glyphs when it
  * recorded it, `<hhBBI` (x, y, w, h, offset into bitmaps) each, blended like glyph() */
 static mp_obj_t gfx_glyphs(size_t n_args, const mp_obj_t *args) {
@@ -414,6 +434,7 @@ static const mp_rom_map_elem_t globals[] = {
     { MP_ROM_QSTR(MP_QSTR_band), MP_ROM_PTR(&gfx_band_obj) },
     { MP_ROM_QSTR(MP_QSTR_shape), MP_ROM_PTR(&gfx_shape_obj) },
     { MP_ROM_QSTR(MP_QSTR_glyphs), MP_ROM_PTR(&gfx_glyphs_obj) },
+    { MP_ROM_QSTR(MP_QSTR_shade), MP_ROM_PTR(&gfx_shade_obj) },
     { MP_ROM_QSTR(MP_QSTR_colour), MP_ROM_PTR(&gfx_colour_obj) },
     { MP_ROM_QSTR(MP_QSTR_save), MP_ROM_PTR(&gfx_save_obj) },
     { MP_ROM_QSTR(MP_QSTR_qr_encode), MP_ROM_PTR(&gfx_qr_encode_obj) },

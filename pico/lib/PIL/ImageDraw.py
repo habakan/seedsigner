@@ -22,6 +22,11 @@ def replay(ops, dx, dy, clip):
         k = op[0]
         if k in ("rect", "rrect", "ellipse", "arc") and (dy + op[4] < clip[1] or dy + op[2] >= clip[3]):
             continue
+        if k == "shade":
+            _, x0, y0, x1, y1, c, a, holes = op
+            for r in _less(x0, y0, x1, y1, holes):
+                _gfx.shade(dx + r[0], dy + r[1], dx + r[2] + 1, dy + r[3] + 1, c, a, clip[0], clip[1], clip[2], clip[3])
+            continue
         if k == "rect":
             _, x0, y0, x1, y1, fill, outline, width = op
             if fill is not None:
@@ -150,6 +155,9 @@ class ImageDraw:
 
     def rectangle(self, xy, fill=None, outline=None, width=1):
         x0, y0, x1, y1 = _box(xy)
+        if fill is not None and _Image.rgba(fill, self.mode)[3] == 0 and self.im.ops and self.im.ops[0][0] == "shade":
+            self.im.ops[0][7].append((x0, y0, x1, y1))  # a hole in the image's translucent background
+            fill = None
         self.im.add(("rect", x0, y0, x1, y1, self._c(fill), self._c(outline), width))
 
     def rounded_rectangle(self, xy, radius=0, fill=None, outline=None, width=1, corners=None):
@@ -193,6 +201,28 @@ class ImageDraw:
 
     def textlength(self, text, font=None, *args, **kwargs):
         return font.getlength(text)
+
+
+def _less(x0, y0, x1, y1, holes):
+    """The box less the holes, as boxes, all inclusive."""
+    boxes = [(x0, y0, x1, y1)]
+    for hx0, hy0, hx1, hy1 in holes:
+        out = []
+        for a0, b0, a1, b1 in boxes:
+            if hx0 > a1 or hx1 < a0 or hy0 > b1 or hy1 < b0:
+                out.append((a0, b0, a1, b1))
+                continue
+            if b0 < hy0:
+                out.append((a0, b0, a1, hy0 - 1))
+            if hy1 < b1:
+                out.append((a0, hy1 + 1, a1, b1))
+            top, bottom = max(b0, hy0), min(b1, hy1)
+            if a0 < hx0:
+                out.append((a0, top, hx0 - 1, bottom))
+            if hx1 < a1:
+                out.append((hx1 + 1, top, a1, bottom))
+        boxes = out
+    return boxes
 
 
 def text_op(x, y, text, font, c, anchor):

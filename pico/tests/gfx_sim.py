@@ -194,6 +194,15 @@ def shape(ell, x0, y0, x1, y1, r, fill, outline, w, dx, dy, cx0, cy0, cx1, cy1):
             span(py, dx + a, dx + b, outline)
 
 
+def shade(x0, y0, x1, y1, c, a, cx0, cy0, cx1, cy1):
+    x0, y0 = max(x0, cx0, 0), max(y0, cy0, _band[0])
+    x1, y1 = min(x1, cx1, WIDTH), min(y1, cy1, _band[1])
+    for y in range(y0, y1):
+        for x in range(x0, x1):
+            d = y * WIDTH + x
+            canvas_bytes[d] = c if a >= 15 else _blend(canvas_bytes[d], c, a)
+
+
 def glyphs(placed, bitmaps, c, dx, dy, cx0, cy0, cx1, cy1):
     import struct
     for k in range(0, len(placed) - 9, 10):

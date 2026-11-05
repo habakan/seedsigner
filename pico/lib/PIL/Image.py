@@ -58,7 +58,10 @@ class Image:
         self.ops, self.boxes = [], []  # boxes: each op's extent, kept by add() for its pruning
         self.dirty = None  # what add() changed since the display last showed this image, inclusive
         bg = rgba(color, mode) if color is not None else (rgba(0, mode) if mode != "RGBA" else None)
-        if bg is not None and bg[3]:
+        if bg is not None and 0 < bg[3] < 255 and mode == "RGBA":
+            # Translucent: it dims what it is pasted over, less the holes fully transparent rectangles punch
+            self.ops.append(("shade", 0, 0, self.size[0] - 1, self.size[1] - 1, c332(bg), bg[3] * 15 // 255, []))
+        elif bg is not None and bg[3]:
             self.ops.append(("rect", 0, 0, self.size[0] - 1, self.size[1] - 1, c332(bg), None, 1))
 
     @property
@@ -147,7 +150,7 @@ class Image:
 def box(op):
     """The extent of `op`, inclusive, or None where it is not worked out (never pruned)."""
     k = op[0]
-    if k in ("rect", "rrect", "ellipse", "arc"):
+    if k in ("rect", "rrect", "ellipse", "arc", "shade"):
         return op[1], op[2], op[3], op[4]
     if k == "text":
         _, x, y, text, font, c, anchor, placed = op
