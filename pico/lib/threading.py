@@ -14,11 +14,19 @@ class Thread:
         self.name, self.daemon, self._alive = name, daemon, False
 
     def start(self):
-        self._alive = True
-        # The rp2 port's default thread stack overflows on SeedSigner's import chains (the preload thread)
-        if hasattr(_thread, "stack_size"):
-            _thread.stack_size(16 * 1024)
-        _thread.start_new_thread(self._bootstrap, ())
+        # The rp2 port runs one thread besides the main one, on core1 (patches/); SeedSigner's all end on
+        # their own or with their screen, so a second waits for the first
+        deadline = time.ticks_add(time.ticks_ms(), 30000)
+        while True:
+            self._alive = True  # before core1 can run it and clear it; undone if it never starts
+            try:
+                _thread.start_new_thread(self._bootstrap, ())
+                return
+            except OSError:
+                self._alive = False
+                if time.ticks_diff(deadline, time.ticks_ms()) < 0:
+                    raise
+                time.sleep_ms(50)
 
     def _bootstrap(self):
         try:

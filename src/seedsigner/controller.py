@@ -1,6 +1,7 @@
 from datetime import datetime
 import logging
 import os
+import sys
 import time
 import traceback
 
@@ -79,6 +80,9 @@ class BackgroundImportThread(BaseThread):
             time_import('seedsigner.hardware.pivideostream')
         except ImportError:
             pass  # the Pico's camera is not the Pi's
+
+        if sys.implementation.name == "micropython":
+            return  # the Pico's heap cannot hold every view's module at once; each loads when first used
 
         # Get MainMenuView ready to respond quickly
         time_import('seedsigner.views.scan_views')

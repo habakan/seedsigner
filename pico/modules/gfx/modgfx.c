@@ -1,5 +1,5 @@
-/* The 240x240 canvas SeedSigner's screens draw on, and the ST7789 it goes to. One byte a pixel keeps it
- * to 57.6 KB, out of MicroPython's heap: a 6x6x6 colour cube and 40 greys, as SeedSigner's palette is greys */
+/* SeedSigner's screens drawn a band of rows at a time (pico/lib/PIL replays them per band) and sent to the
+ * ST7789: a 57.6 KB canvas is heap SeedSigner needs. One byte a pixel, a colour cube and 40 greys */
 #include <string.h>
 #include "py/obj.h"
 #include "py/objarray.h"
@@ -16,7 +16,13 @@
 /* Modest for jumper leads, as bitwasm-signer-pico has it; the ST7789 takes up to 62.5 MHz */
 #define LCD_BAUD (40 * 1000 * 1000)
 
-static uint8_t canvas[W * H];
+#define BAND 40
+static uint8_t band[W * BAND];
+static int band_y0;
+#define BAND_Y1 (band_y0 + BAND < H ? band_y0 + BAND : H)
+#define PX(x, y) (band + ((y) - band_y0) * W + (x))
+/* Clip boxes come in screen rows; drawing lands only in the band's */
+#define CLIP_Y(v) clampi(mp_obj_get_int(v), band_y0, BAND_Y1)
 static uint16_t rgb565[256];
 static uint8_t rgb[256][3];
 static bool lcd_up, palette_up;
@@ -78,13 +84,20 @@ static inline uint8_t blend(uint8_t bg, uint8_t fg, int a /* 0..15 */) {
                   (p[2] * (15 - a) + q[2] * a + 7) / 15);
 }
 
-/* show(x0=0, y0=0, x1=240, y1=240): sends that part of the canvas */
+/* band(y0): the band now drawn on is rows y0 to y0 + BAND; its height */
+static mp_obj_t gfx_band(mp_obj_t y0) {
+    band_y0 = clampi(mp_obj_get_int(y0), 0, H - 1);
+    return MP_OBJ_NEW_SMALL_INT(BAND_Y1 - band_y0);
+}
+static MP_DEFINE_CONST_FUN_OBJ_1(gfx_band_obj, gfx_band);
+
+/* show(x0=0, y0=0, x1=240, y1=240): sends that part of the band */
 static mp_obj_t gfx_show(size_t n_args, const mp_obj_t *args) {
     if (!lcd_up) lcd_init();
     int x0 = n_args > 0 ? clampi(mp_obj_get_int(args[0]), 0, W) : 0;
-    int y0 = n_args > 1 ? clampi(mp_obj_get_int(args[1]), 0, H) : 0;
+    int y0 = n_args > 1 ? CLIP_Y(args[1]) : band_y0;
     int x1 = n_args > 2 ? clampi(mp_obj_get_int(args[2]), 0, W) : W;
-    int y1 = n_args > 3 ? clampi(mp_obj_get_int(args[3]), 0, H) : H;
+    int y1 = n_args > 3 ? CLIP_Y(args[3]) : BAND_Y1;
     if (x1 <= x0 || y1 <= y0) return mp_const_none;
     uint8_t caset[4] = {0, (uint8_t)x0, 0, (uint8_t)(x1 - 1)}, raset[4] = {0, (uint8_t)y0, 0, (uint8_t)(y1 - 1)};
     cmd(0x2a, caset, 4);
@@ -92,7 +105,7 @@ static mp_obj_t gfx_show(size_t n_args, const mp_obj_t *args) {
     cmd(0x2c, NULL, 0);
     uint8_t line[W * 2];
     for (int y = y0; y < y1; y++) {
-        const uint8_t *row = canvas + y * W;
+        const uint8_t *row = PX(0, y);
         for (int x = x0; x < x1; x++) {
             uint16_t p = rgb565[row[x]];
             line[2 * (x - x0)] = (uint8_t)(p >> 8), line[2 * (x - x0) + 1] = (uint8_t)p;
@@ -103,19 +116,19 @@ static mp_obj_t gfx_show(size_t n_args, const mp_obj_t *args) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(gfx_show_obj, 0, 4, gfx_show);
 
-/* fill(x0, y0, x1, y1, c): x1 and y1 exclusive, clipped to the canvas */
+/* fill(x0, y0, x1, y1, c): x1 and y1 exclusive, clipped to the band */
 static mp_obj_t gfx_fill(size_t n_args, const mp_obj_t *args) {
     (void)n_args;
-    int x0 = clampi(mp_obj_get_int(args[0]), 0, W), y0 = clampi(mp_obj_get_int(args[1]), 0, H);
-    int x1 = clampi(mp_obj_get_int(args[2]), 0, W), y1 = clampi(mp_obj_get_int(args[3]), 0, H);
+    int x0 = clampi(mp_obj_get_int(args[0]), 0, W), y0 = CLIP_Y(args[1]);
+    int x1 = clampi(mp_obj_get_int(args[2]), 0, W), y1 = CLIP_Y(args[3]);
     uint8_t c = (uint8_t)mp_obj_get_int(args[4]);
-    for (int y = y0; y < y1; y++) memset(canvas + y * W + x0, c, (size_t)(x1 > x0 ? x1 - x0 : 0));
+    for (int y = y0; y < y1; y++) memset(PX(x0, y), c, (size_t)(x1 > x0 ? x1 - x0 : 0));
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(gfx_fill_obj, 5, 5, gfx_fill);
 
 /* glyph(x, y, w, h, alpha, c, cx0, cy0, cx1, cy1): blends a 4-bit alpha bitmap (two pixels a byte, high
- * nibble first, rows padded to whole bytes) in colour c, clipped to the canvas and to the clip box */
+ * nibble first, rows padded to whole bytes) in colour c, clipped to the band and to the clip box */
 static mp_obj_t gfx_glyph(size_t n_args, const mp_obj_t *args) {
     (void)n_args;
     int x = mp_obj_get_int(args[0]), y = mp_obj_get_int(args[1]);
@@ -123,8 +136,8 @@ static mp_obj_t gfx_glyph(size_t n_args, const mp_obj_t *args) {
     mp_buffer_info_t a;
     mp_get_buffer_raise(args[4], &a, MP_BUFFER_READ);
     uint8_t c = (uint8_t)mp_obj_get_int(args[5]);
-    int cx0 = clampi(mp_obj_get_int(args[6]), 0, W), cy0 = clampi(mp_obj_get_int(args[7]), 0, H);
-    int cx1 = clampi(mp_obj_get_int(args[8]), 0, W), cy1 = clampi(mp_obj_get_int(args[9]), 0, H);
+    int cx0 = clampi(mp_obj_get_int(args[6]), 0, W), cy0 = CLIP_Y(args[7]);
+    int cx1 = clampi(mp_obj_get_int(args[8]), 0, W), cy1 = CLIP_Y(args[9]);
     int stride = (w + 1) / 2;
     if (!palette_up) palette_init();
     if ((size_t)(stride * h) > a.len) mp_raise_ValueError(MP_ERROR_TEXT("glyph bitmap too short"));
@@ -138,7 +151,7 @@ static mp_obj_t gfx_glyph(size_t n_args, const mp_obj_t *args) {
             uint8_t v = src[j * stride + i / 2];
             int al = (i & 1) ? (v & 15) : (v >> 4);
             if (!al) continue;
-            uint8_t *d = canvas + py * W + px;
+            uint8_t *d = PX(px, py);
             *d = al == 15 ? c : blend(*d, c, al);
         }
     }
@@ -153,25 +166,25 @@ static mp_obj_t gfx_blit(size_t n_args, const mp_obj_t *args) {
     mp_get_buffer_raise(args[0], &s, MP_BUFFER_READ);
     int w = mp_obj_get_int(args[1]), h = mp_obj_get_int(args[2]);
     int x = mp_obj_get_int(args[3]), y = mp_obj_get_int(args[4]);
-    int cx0 = clampi(mp_obj_get_int(args[5]), 0, W), cy0 = clampi(mp_obj_get_int(args[6]), 0, H);
-    int cx1 = clampi(mp_obj_get_int(args[7]), 0, W), cy1 = clampi(mp_obj_get_int(args[8]), 0, H);
+    int cx0 = clampi(mp_obj_get_int(args[5]), 0, W), cy0 = CLIP_Y(args[6]);
+    int cx1 = clampi(mp_obj_get_int(args[7]), 0, W), cy1 = CLIP_Y(args[8]);
     if ((size_t)(w * h) > s.len) mp_raise_ValueError(MP_ERROR_TEXT("image too short"));
     for (int j = 0; j < h; j++) {
         int py = y + j;
         if (py < cy0 || py >= cy1) continue;
         int i0 = x < cx0 ? cx0 - x : 0, i1 = x + w > cx1 ? cx1 - x : w;
-        if (i1 > i0) memcpy(canvas + py * W + x + i0, (const uint8_t *)s.buf + j * w + i0, (size_t)(i1 - i0));
+        if (i1 > i0) memcpy(PX(x + i0, py), (const uint8_t *)s.buf + j * w + i0, (size_t)(i1 - i0));
     }
     return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(gfx_blit_obj, 9, 9, gfx_blit);
 
-/* save(x0, y0, x1, y1): that part of the canvas run-length encoded, (count, index) pairs row by row; a
- * copy of the canvas, as a toast takes before it draws, is then a few KB rather than 57.6 */
+/* save(x0, y0, x1, y1): that part of the band run-length encoded, (count, index) pairs row by row: a
+ * screenshot, band by band, for pico/tests/drive.py */
 static mp_obj_t gfx_save(size_t n_args, const mp_obj_t *args) {
     (void)n_args;
-    int x0 = clampi(mp_obj_get_int(args[0]), 0, W), y0 = clampi(mp_obj_get_int(args[1]), 0, H);
-    int x1 = clampi(mp_obj_get_int(args[2]), 0, W), y1 = clampi(mp_obj_get_int(args[3]), 0, H);
+    int x0 = clampi(mp_obj_get_int(args[0]), 0, W), y0 = CLIP_Y(args[1]);
+    int x1 = clampi(mp_obj_get_int(args[2]), 0, W), y1 = CLIP_Y(args[3]);
     size_t n = 0;
     for (int pass = 0; pass < 2; pass++) {
         uint8_t *out = NULL;
@@ -179,7 +192,7 @@ static mp_obj_t gfx_save(size_t n_args, const mp_obj_t *args) {
         if (pass) vstr_init_len(&v, n), out = (uint8_t *)v.buf;
         size_t k = 0;
         for (int y = y0; y < y1; y++) {
-            const uint8_t *row = canvas + y * W;
+            const uint8_t *row = PX(0, y);
             for (int x = x0; x < x1;) {
                 int run = 1;
                 while (x + run < x1 && run < 255 && row[x + run] == row[x]) run++;
@@ -194,34 +207,11 @@ static mp_obj_t gfx_save(size_t n_args, const mp_obj_t *args) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(gfx_save_obj, 4, 4, gfx_save);
 
-/* restore(data, w, x, y, cx0, cy0, cx1, cy1): save()'s w-wide rows put back at (x, y), clipped to the box */
-static mp_obj_t gfx_restore(size_t n_args, const mp_obj_t *args) {
-    (void)n_args;
-    mp_buffer_info_t d;
-    mp_get_buffer_raise(args[0], &d, MP_BUFFER_READ);
-    int w = mp_obj_get_int(args[1]), x = mp_obj_get_int(args[2]), y = mp_obj_get_int(args[3]);
-    int cx0 = clampi(mp_obj_get_int(args[4]), 0, W), cy0 = clampi(mp_obj_get_int(args[5]), 0, H);
-    int cx1 = clampi(mp_obj_get_int(args[6]), 0, W), cy1 = clampi(mp_obj_get_int(args[7]), 0, H);
-    const uint8_t *p = d.buf;
-    int px = 0, py = 0;
-    for (size_t k = 0; k + 1 < d.len; k += 2) {
-        int run = p[k];
-        uint8_t c = p[k + 1];
-        int yy = y + py;
-        if (yy >= cy0 && yy < cy1) {
-            int a = x + px, b = a + run;
-            a = a < cx0 ? cx0 : a, b = b > cx1 ? cx1 : b;
-            if (b > a) memset(canvas + yy * W + a, c, (size_t)(b - a));
-        }
-        px += run;
-        if (px >= w) px = 0, py++;
-    }
-    return mp_const_none;
-}
-static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(gfx_restore_obj, 8, 8, gfx_restore);
-
-/* Static, not on the heap: three of qrcodegen's largest buffers are 11.7 KB the fragmented heap may lack */
-static uint8_t qr_text[qrcodegen_BUFFER_LEN_MAX + 1], qr_temp[qrcodegen_BUFFER_LEN_MAX], qr_out[qrcodegen_BUFFER_LEN_MAX];
+/* Static, not on the heap, which fragments. Version 25 holds 1273 bytes, past anything SeedSigner shows in one
+ * code; the text goes in qr_out, which qrcodegen reads it from before writing the code there */
+#define QR_VERSION_MAX 25
+#define QR_LEN qrcodegen_BUFFER_LEN_FOR_VERSION(QR_VERSION_MAX)
+static uint8_t qr_temp[QR_LEN], qr_out[QR_LEN + 1];
 
 /* qr_encode(data): a str (numeric, alphanumeric or byte mode, whichever fits it) or bytes as a QR code at
  * level L in the smallest version, as SeedSigner's qrcode and qrencode make it; qrcodegen's buffer, trimmed */
@@ -230,17 +220,17 @@ static mp_obj_t gfx_qr_encode(mp_obj_t data) {
     if (mp_obj_is_str(data)) {
         size_t len;
         const char *s = mp_obj_str_get_data(data, &len);
-        if (len > qrcodegen_BUFFER_LEN_MAX) mp_raise_ValueError(MP_ERROR_TEXT("too long for a QR code"));
-        memcpy(qr_text, s, len), qr_text[len] = 0;
-        ok = qrcodegen_encodeText((const char *)qr_text, qr_temp, qr_out, qrcodegen_Ecc_LOW, qrcodegen_VERSION_MIN,
-                                  qrcodegen_VERSION_MAX, qrcodegen_Mask_AUTO, false);
+        if (len >= QR_LEN) mp_raise_ValueError(MP_ERROR_TEXT("too long for a QR code"));
+        memcpy(qr_out, s, len), qr_out[len] = 0;
+        ok = qrcodegen_encodeText((const char *)qr_out, qr_temp, qr_out, qrcodegen_Ecc_LOW, qrcodegen_VERSION_MIN,
+                                  QR_VERSION_MAX, qrcodegen_Mask_AUTO, false);
     } else {
         mp_buffer_info_t b;
         mp_get_buffer_raise(data, &b, MP_BUFFER_READ);
-        if (b.len > qrcodegen_BUFFER_LEN_MAX) mp_raise_ValueError(MP_ERROR_TEXT("too long for a QR code"));
+        if (b.len > QR_LEN) mp_raise_ValueError(MP_ERROR_TEXT("too long for a QR code"));
         memcpy(qr_temp, b.buf, b.len);
         ok = qrcodegen_encodeBinary(qr_temp, b.len, qr_out, qrcodegen_Ecc_LOW, qrcodegen_VERSION_MIN,
-                                    qrcodegen_VERSION_MAX, qrcodegen_Mask_AUTO, false);
+                                    QR_VERSION_MAX, qrcodegen_Mask_AUTO, false);
     }
     if (!ok) mp_raise_ValueError(MP_ERROR_TEXT("too long for a QR code"));
     int n = qrcodegen_getSize(qr_out);
@@ -268,8 +258,8 @@ static mp_obj_t gfx_qr(size_t n_args, const mp_obj_t *args) {
     int w = mp_obj_get_int(args[4]), h = mp_obj_get_int(args[5]);
     uint8_t fg = mp_obj_get_int(args[6]), bg = mp_obj_get_int(args[7]);
     int style = mp_obj_get_int(args[8]);
-    int cx0 = clampi(mp_obj_get_int(args[9]), 0, W), cy0 = clampi(mp_obj_get_int(args[10]), 0, H);
-    int cx1 = clampi(mp_obj_get_int(args[11]), 0, W), cy1 = clampi(mp_obj_get_int(args[12]), 0, H);
+    int cx0 = clampi(mp_obj_get_int(args[9]), 0, W), cy0 = CLIP_Y(args[10]);
+    int cx1 = clampi(mp_obj_get_int(args[11]), 0, W), cy1 = CLIP_Y(args[12]);
     int N = n + 2 * border;
     if (w <= 0 || h <= 0) return mp_const_none;
     cx0 = x > cx0 ? x : cx0, cy0 = y > cy0 ? y : cy0;
@@ -293,7 +283,7 @@ static mp_obj_t gfx_qr(size_t n_args, const mp_obj_t *args) {
                     dark = fx >= dx && fx < cs_x - dx && fy >= dy && fy < cs_y - dy;
                 }
             }
-            canvas[py * W + px] = dark ? fg : bg;
+            *PX(px, py) = dark ? fg : bg;
         }
     }
     return mp_const_none;
@@ -306,11 +296,6 @@ static mp_obj_t gfx_colour(mp_obj_t r, mp_obj_t g, mp_obj_t b) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_3(gfx_colour_obj, gfx_colour);
 
-/* canvas(): the canvas itself as a bytearray, for the odd pixel Python sets */
-static mp_obj_t gfx_canvas(void) {
-    return mp_obj_new_bytearray_by_ref(sizeof(canvas), canvas);
-}
-static MP_DEFINE_CONST_FUN_OBJ_0(gfx_canvas_obj, gfx_canvas);
 
 static const mp_rom_map_elem_t globals[] = {
     { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR__gfx) },
@@ -318,14 +303,14 @@ static const mp_rom_map_elem_t globals[] = {
     { MP_ROM_QSTR(MP_QSTR_fill), MP_ROM_PTR(&gfx_fill_obj) },
     { MP_ROM_QSTR(MP_QSTR_glyph), MP_ROM_PTR(&gfx_glyph_obj) },
     { MP_ROM_QSTR(MP_QSTR_blit), MP_ROM_PTR(&gfx_blit_obj) },
-    { MP_ROM_QSTR(MP_QSTR_canvas), MP_ROM_PTR(&gfx_canvas_obj) },
+    { MP_ROM_QSTR(MP_QSTR_band), MP_ROM_PTR(&gfx_band_obj) },
     { MP_ROM_QSTR(MP_QSTR_colour), MP_ROM_PTR(&gfx_colour_obj) },
     { MP_ROM_QSTR(MP_QSTR_save), MP_ROM_PTR(&gfx_save_obj) },
     { MP_ROM_QSTR(MP_QSTR_qr_encode), MP_ROM_PTR(&gfx_qr_encode_obj) },
     { MP_ROM_QSTR(MP_QSTR_qr), MP_ROM_PTR(&gfx_qr_obj) },
-    { MP_ROM_QSTR(MP_QSTR_restore), MP_ROM_PTR(&gfx_restore_obj) },
     { MP_ROM_QSTR(MP_QSTR_WIDTH), MP_ROM_INT(W) },
     { MP_ROM_QSTR(MP_QSTR_HEIGHT), MP_ROM_INT(H) },
+    { MP_ROM_QSTR(MP_QSTR_BAND), MP_ROM_INT(BAND) },
 };
 static MP_DEFINE_CONST_DICT(globals_dict, globals);
 

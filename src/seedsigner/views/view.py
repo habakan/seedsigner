@@ -166,7 +166,12 @@ class Destination:
 
     def run(self):
         self._instantiate_view()
-        return self._run_view()
+        try:
+            return self._run_view()
+        finally:
+            # The View stays on the back stack, but its finished Screen needn't: on the Pico each one held
+            # is several KB of heap, a 12-word entry dozens
+            self.view.screen = None
 
 
     def __eq__(self, obj):

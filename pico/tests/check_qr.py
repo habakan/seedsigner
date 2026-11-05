@@ -79,7 +79,9 @@ for name, data in CASES:
         else:
             im = pico_qr.QR().qrimage(data, size, size, background_color=bg, **kw)
         gfx_sim.canvas_bytes[:] = bytes([gfx_sim.colour(255, 255, 255)]) * (240 * 240)
-        ImageDraw.replay(im.ops, 0, 0, (0, 0, 240, 240))
+        for by in range(0, 240, gfx_sim.BAND):
+            gfx_sim.band(by)
+            ImageDraw.replay(im.ops, 0, 0, (0, by, 240, by + gfx_sim.BAND))
         path = out / ("%s-%s%d.ppm" % (name, fn, style))
         to_ppm(gfx_sim.canvas_bytes, path)
         got = zbar(path)

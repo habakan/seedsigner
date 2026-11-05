@@ -7,7 +7,7 @@
 #include "wasm_export.h"
 
 #ifndef WAMR_POOL_KB
-#define WAMR_POOL_KB 160 /* what bitwasm-signer-pico gives parser.wasm, UR assembly included */
+#define WAMR_POOL_KB 116 /* parser-no-ur.wasm peaks at 107 KB, its buffers being fixed; the camera's frame fits too */
 #endif
 static char pool[WAMR_POOL_KB * 1024];
 static bool runtime_up;

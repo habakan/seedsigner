@@ -44,7 +44,7 @@ py:
 	printf 'NAME = "%s"\nFORK = "%s"\nSHORT_COMMIT_HASH = "%s"\n' "$$(git describe --tags --exact-match 2>/dev/null || git rev-parse --abbrev-ref HEAD)" \
 	  "$$(git remote get-url origin | sed -E 's|.*[:/]([^/]+)/[^/]+$$|\1|')" "$$(git rev-parse --short HEAD)" > $(OUT)/py/pico_version.py
 	python3 -c "import sys; print('PARSER = ' + repr(open(sys.argv[1], 'rb').read()))" \
-	  ../src/seedsigner/resources/bitwasm/parser.wasm > $(OUT)/py/bitwasm_modules.py
+	  ../src/seedsigner/resources/bitwasm/parser-no-ur.wasm > $(OUT)/py/bitwasm_modules.py
 .PHONY: py
 
 # Every module as MicroPython bytecode, which also proves it parses
@@ -56,7 +56,13 @@ mpy: py
 
 # MicroPython for the Pico 2's RISC-V cores; PICO_TOOLCHAIN_PATH is a RISC-V GCC. The fonts outgrow 1 MB of
 # firmware, so it gets 3 MB and the filesystem 1 MB; passed in the environment so the port's CMAKE_ARGS stay
-rp2: py
+# MicroPython fixes the firmware needs (patches/), applied once to the checkout
+patch:
+	@for p in $(abspath patches)/*.patch; do \
+	  git -C $(MPY_DIR) apply --reverse --check $$p 2>/dev/null || git -C $(MPY_DIR) apply $$p || exit 1; done
+.PHONY: patch
+
+rp2: py patch
 	@test -n "$(BITWASM_SIGNER)" || { echo "set BITWASM_SIGNER to a bitwasm-signer checkout at the pinned commit"; exit 1; }
 	BITWASM_SIGNER=$(abspath $(BITWASM_SIGNER)) WAMR_ROOT=$(abspath $(WAMR_ROOT)) \
 	  CMAKE_ARGS=-DMICROPY_HW_FLASH_STORAGE_BYTES=1048576 $(MAKE) -C $(MPY_DIR)/ports/rp2 -j8 BOARD=RPI_PICO2 BOARD_VARIANT=RISCV \
@@ -69,6 +75,13 @@ device-install:
 	printf 'from seedsigner.controller import Controller\nController.get_instance().start()\n' > $(OUT)/main.py
 	mpremote connect $(PORT) cp $(OUT)/main.py :main.py
 .PHONY: device-install
+
+# The same with buttons pressed and the screen read over USB serial (pico/lib/RPi/GPIO.py, tests/drive.py):
+# for development only, since a signer should take no input but its own buttons and camera
+device-install-dev:
+	printf 'import RPi.GPIO\nRPi.GPIO.serial_keys = True\nfrom seedsigner.controller import Controller\nController.get_instance().start()\n' > $(OUT)/main.py
+	mpremote connect $(PORT) cp $(OUT)/main.py :main.py
+.PHONY: device-install-dev
 
 # Run a script on the device with the modules mounted from the host: make device-smoke PORT=/dev/cu.usbmodem...
 device-%:

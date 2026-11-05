@@ -117,6 +117,13 @@ class Strip(ast.NodeTransformer):
     def visit_ClassDef(self, node):
         # list[Destination] as a base is list to CPython at runtime; MicroPython cannot subscript a type
         node.bases = [b.value if isinstance(b, ast.Subscript) else b for b in node.bases]
+        if not node.bases and not CPYTHON:
+            # A mixin's super() must reach the class after it in the instance's bases (pico/lib/pico_super.py)
+            for sub in ast.walk(node):
+                if isinstance(sub, ast.Call) and getattr(sub.func, "id", None) == "super" and not sub.args:
+                    sub.func.id = "mixin_super"
+                    sub.args = [ast.Name(node.name), ast.Name("self")]
+                    self.mixin_super = True
         if is_dataclass(node):
             fields = self.fields[id(node)]
             node.decorator_list = [d for d in node.decorator_list if not (
@@ -232,6 +239,8 @@ def main():
         tree = Strip(fields, registry).visit(trees[p])
         ast.fix_missing_locations(tree)
         text = ast.unparse(tree)
+        if "mixin_super(" in text:
+            text = "from pico_super import mixin_super\n" + text
         if MISSING in text:
             text = f"{MISSING} = object()\n" + text
         dest = out / src.name / p.relative_to(src)

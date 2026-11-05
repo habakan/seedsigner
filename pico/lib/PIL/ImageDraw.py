@@ -58,8 +58,12 @@ def _ring(outer, inner, c, dx, dy, clip):
 
 
 def replay(ops, dx, dy, clip):
+    """Draws `ops` offset by (dx, dy) inside `clip`, which is at most a band of rows: what lies wholly
+    outside it is skipped here, before the per-row and per-glyph work in Python."""
     for op in ops:
         k = op[0]
+        if k in ("rect", "rrect", "ellipse", "arc") and (dy + op[4] < clip[1] or dy + op[2] >= clip[3]):
+            continue
         if k == "rect":
             _, x0, y0, x1, y1, fill, outline, width = op
             if fill is not None:
@@ -88,6 +92,9 @@ def replay(ops, dx, dy, clip):
                 _spans(_ellipse_rows(x0, y0, x1, y1), fill, dx, dy, clip)
         elif k == "line":
             _, pts, c, width = op
+            ys = [p[1] for p in pts]
+            if dy + max(ys) + width < clip[1] or dy + min(ys) - width >= clip[3]:
+                continue
             for (ax, ay), (bx, by) in zip(pts, pts[1:]):
                 _line(ax, ay, bx, by, c, width, dx, dy, clip)
         elif k == "arc":
@@ -95,6 +102,8 @@ def replay(ops, dx, dy, clip):
             _arc(x0, y0, x1, y1, start, end, c, width, dx, dy, clip)
         elif k == "text":
             _, x, y, text, font, c, anchor = op
+            if dy + y + 2 * font.size < clip[1] or dy + y - 2 * font.size >= clip[3]:
+                continue
             bits = memoryview(font.bitmaps)
             for gx, gy, w, h, off in font.glyphs(text, x, y, anchor):
                 _gfx.glyph(dx + gx, dy + gy, w, h, bits[off:off + ((w + 1) // 2) * h], c,
@@ -102,15 +111,14 @@ def replay(ops, dx, dy, clip):
         elif k == "qr":
             _, code, border, x, y, w, h, fg, bg, style = op
             _gfx.qr(code, border, dx + x, dy + y, w, h, fg, bg, style, clip[0], clip[1], clip[2], clip[3])
-        elif k == "rle":
-            _, data, w = op
-            _gfx.restore(data, w, dx, dy, clip[0], clip[1], clip[2], clip[3])
         elif k == "pix":
             _, pixels, w, h = op
             _gfx.blit(pixels, w, h, dx, dy, clip[0], clip[1], clip[2], clip[3])
         elif k == "img":
             _, sub, x, y, w, h = op
-            replay(sub, dx + x, dy + y, _clip(clip, (dx + x, dy + y, dx + x + w, dy + y + h)))
+            c = _clip(clip, (dx + x, dy + y, dx + x + w, dy + y + h))
+            if c[0] < c[2] and c[1] < c[3]:
+                replay(sub, dx + x, dy + y, c)
         elif k == "scale":
             _, sub, sx, sy = op
             replay(_scaled(sub, sx, sy), dx, dy, clip)

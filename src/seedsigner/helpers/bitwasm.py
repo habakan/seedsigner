@@ -24,6 +24,8 @@ from seedsigner.models.settings import SettingsConstants
 logger = logging.getLogger(__name__)
 
 PARSER_SHA256 = "4a5c16b42ebb958a84063386511daf6dd0ed39d4cd5a20aba1c76047c2841e5f"
+# The Pico assembles UR in Python, so it runs the build without the UR decoder: 42 KB less of WAMR's pool
+PARSER_NO_UR_SHA256 = "b9e6fde5ef67ba7b17edf700b3aacf7e4893995cdfe6d6672c3207af59ad3cb7"
 SIGNER_SHA256 = "3be85e82fabe05765e63bb35c03d94daa4f6d25a61ea5449623de713fd196517"
 
 OWNER_EXTERNAL, OWNER_CHANGE, OWNER_SELF = 0, 1, 2
@@ -70,8 +72,9 @@ def _load_parser():
     global _parser
     # On the Pico the camera borrows WAMR's pool while it scans, which ends the instance
     if _parser is None or not getattr(_parser, "alive", lambda: True)():
-        wasm = _read("parser.wasm")
-        if hashlib.sha256(wasm).digest().hex() != PARSER_SHA256:
+        pico = sys.implementation.name == "micropython"
+        wasm = _read("parser-no-ur.wasm" if pico else "parser.wasm")
+        if hashlib.sha256(wasm).digest().hex() != (PARSER_NO_UR_SHA256 if pico else PARSER_SHA256):
             raise BitwasmError("parser.wasm is not the pinned build")
         _parser = Instance(wasm)
     return _parser
@@ -159,6 +162,12 @@ class Wordlist:
         return (self[i] for i in range(2048))
 
     def index(self, word):
+        lo = self._bisect(word)
+        if lo < 2048 and self[lo] == word:
+            return lo
+        raise ValueError(f"{word!r} is not in the dictionary")
+
+    def _bisect(self, word):
         lo, hi = 0, 2048
         while lo < hi:
             mid = (lo + hi) // 2
@@ -166,9 +175,11 @@ class Wordlist:
                 lo = mid + 1
             else:
                 hi = mid
-        if lo < 2048 and self[lo] == word:
-            return lo
-        raise ValueError(f"{word!r} is not in the dictionary")
+        return lo
+
+    def with_prefix(self, prefix):
+        """The words starting with `prefix`, found by bisecting rather than by making all 2048 of them."""
+        return [self[i] for i in range(self._bisect(prefix), self._bisect(prefix + "\x7f"))]
 
     def __contains__(self, word):
         try:

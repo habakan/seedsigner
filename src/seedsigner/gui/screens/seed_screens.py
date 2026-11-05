@@ -151,7 +151,10 @@ class SeedMnemonicEntryScreen(BaseTopNavScreen):
 
 
     def calc_possible_words(self):
-        self.possible_words = [i for i in self.wordlist if i.startswith("".join(self.letters).strip())]
+        prefix = "".join(self.letters).strip()
+        # bitwasm's Wordlist bisects; making every word to test it is churn the Pico's heap cannot take
+        with_prefix = getattr(self.wordlist, "with_prefix", None)
+        self.possible_words = with_prefix(prefix) if with_prefix else [i for i in self.wordlist if i.startswith(prefix)]
         self.selected_possible_words_index = 0        
 
 

@@ -1,7 +1,7 @@
 """
 PIL's Image for SeedSigner on the Pico. An image is a list of drawing operations, not pixels: pasting
-replays them, so a text area costs no buffer. The one image with pixels is the canvas, bound to _gfx's
-framebuffer the first time the display shows it; what is drawn or pasted on it then lands at once.
+copies them and the display replays them, a band of rows at a time (pico/lib/seedsigner/hardware/displays/
+ST7789.py), so no image costs a pixel buffer, the screen included.
 """
 try:
     import _gfx
@@ -55,8 +55,7 @@ class Image:
     def __init__(self, mode, size, color=None):
         self.mode = mode
         self.size = (int(size[0]), int(size[1]))
-        self.ops = []
-        self.bound = False  # the canvas, drawn straight into the framebuffer
+        self.ops, self.boxes = [], []  # boxes: each op's extent, kept by add() for its pruning
         bg = rgba(color, mode) if color is not None else (rgba(0, mode) if mode != "RGBA" else None)
         if bg is not None and bg[3]:
             self.ops.append(("rect", 0, 0, self.size[0] - 1, self.size[1] - 1, c332(bg), None, 1))
@@ -70,17 +69,20 @@ class Image:
         return self.size[1]
 
     def add(self, op):
-        if self.bound:
-            from PIL import ImageDraw
-            ImageDraw.replay([op], 0, 0, (0, 0, W, H))
-        else:
-            self.ops.append(op)
-
-    def bind(self):
-        """Becomes the framebuffer: what was recorded is drawn there, and from now on drawing is direct."""
-        from PIL import ImageDraw
-        ImageDraw.replay(self.ops, 0, 0, (0, 0, W, H))
-        self.ops, self.bound = [], True
+        # What an opaque op hides needn't be kept: the canvas is drawn over for every screen, and parts of
+        # it (a keyboard's keys) for every button press, which would otherwise pile up until the heap ran out
+        if covers(op, self.size[0], self.size[1]):
+            self.ops, self.boxes = [op], [box(op)]
+            return
+        if len(self.boxes) != len(self.ops):
+            self.boxes = [box(o) for o in self.ops]
+        cover = opaque(op)
+        if cover:
+            keep = [i for i, (o, b) in enumerate(zip(self.ops, self.boxes)) if not hidden(o, b, op, cover)]
+            if len(keep) < len(self.ops):
+                self.ops, self.boxes = [self.ops[i] for i in keep], [self.boxes[i] for i in keep]
+        self.ops.append(op)
+        self.boxes.append(box(op))
 
     def paste(self, im, box=None, mask=None):
         if not isinstance(im, Image):  # a colour fills the box
@@ -92,10 +94,7 @@ class Image:
         self.add(("img", im.snapshot(), x, y, im.size[0], im.size[1]))
 
     def snapshot(self):
-        """What this image is now, kept apart from what is drawn on it later. The canvas's is its pixels,
-        run-length encoded by _gfx.save, since a raw copy is more than the fragmented heap can find."""
-        if self.bound:
-            return [("rle", _gfx.save(0, 0, W, H), W)]
+        """What this image is now, kept apart from what is drawn on it later."""
         return list(self.ops)
 
     def crop(self, box=None):
@@ -138,6 +137,62 @@ class Image:
 
     def close(self):
         pass
+
+
+def box(op):
+    """The extent of `op`, inclusive, or None where it is not worked out (never pruned)."""
+    k = op[0]
+    if k in ("rect", "rrect", "ellipse", "arc"):
+        return op[1], op[2], op[3], op[4]
+    if k == "text":
+        _, x, y, text, font, c, anchor = op
+        b = font.getbbox(text, anchor=anchor)
+        return x + b[0], y + b[1], x + b[2], y + b[3]
+    if k == "line":
+        xs, ys, w = [p[0] for p in op[1]], [p[1] for p in op[1]], op[3]
+        return min(xs) - w, min(ys) - w, max(xs) + w, max(ys) + w
+    if k == "pix":
+        return 0, 0, op[2] - 1, op[3] - 1
+    if k == "qr":
+        return op[3], op[4], op[3] + op[5] - 1, op[4] + op[6] - 1
+    if k == "img":
+        return op[2], op[3], op[2] + op[4] - 1, op[3] + op[5] - 1
+    return None
+
+
+def opaque(op):
+    """Rectangles, inclusive, that `op` paints every pixel of."""
+    k = op[0]
+    if k == "rect" and op[5] is not None:
+        return [op[1:5]]
+    if k == "rrect" and op[6] is not None:
+        x0, y0, x1, y1, r = op[1:6]
+        return [(x0 + r, y0, x1 - r, y1), (x0, y0 + r, x1, y1 - r)]
+    if k in ("pix", "qr") or (k == "img" and any(covers(o, op[4], op[5]) for o in op[1])):
+        return [box(op)]
+    return []
+
+
+def hidden(old, b, new, cover):
+    """Whether `new`, painting `cover`, hides all of `old`, whose extent is b."""
+    if old[0] == "rrect" == new[0] and old[1:6] == new[1:6]:
+        return True  # the same rounded rectangle again: a redrawn key
+    return b is not None and any(c[0] <= b[0] and c[1] <= b[1] and b[2] <= c[2] and b[3] <= c[3] for c in cover)
+
+
+def covers(op, w, h):
+    """Whether `op` paints every pixel of a w x h image, opaquely."""
+    k = op[0]
+    if k == "rect":
+        return op[5] is not None and op[1] <= 0 and op[2] <= 0 and op[3] >= w - 1 and op[4] >= h - 1
+    if k == "pix":
+        return op[2] >= w and op[3] >= h
+    if k == "qr":
+        return op[3] <= 0 and op[4] <= 0 and op[3] + op[5] >= w and op[4] + op[6] >= h
+    if k == "img":
+        _, sub, x, y, sw, sh = op
+        return x <= 0 and y <= 0 and x + sw >= w and y + sh >= h and any(covers(o, sw, sh) for o in sub)
+    return False
 
 
 def new(mode, size, color=0):
