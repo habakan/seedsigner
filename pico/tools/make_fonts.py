@@ -2,9 +2,10 @@
 SeedSigner's fonts as bitmaps, for MicroPython, which cannot render TrueType. One module per font and
 size, of bytes only, so frozen it costs flash and no heap.
 
-    python3 pico/tools/make_fonts.py OUT_DIR FONTS_DIR fonts_used.json
+    python3 pico/tools/make_fonts.py OUT_DIR FONTS_DIR fonts_used.json de ja ...
 
-fonts_used.json is {"Font-Name:size": chars} from rendering every screen (pico/Makefile's fonts target).
+fonts_used.json is {locale: {"Font-Name:size": chars}} from rendering every screen (pico/tools/record_fonts.py);
+English and the locales named are made, from FONTS_DIR and the translations' fonts beside it.
 Text fonts get all of printable ASCII besides; icon fonts every icon SeedSigner names. Each glyph is its
 ink box at the baseline, as PIL's getbbox(ch, anchor="ls") gives it, with 4-bit alpha.
 """
@@ -18,8 +19,10 @@ from PIL import Image, ImageDraw, ImageFont
 ICON_FONTS = ("Font_Awesome_6_Free-Solid-900", "seedsigner-icons")
 
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "src"))
+
+
 def icon_chars():
-    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "src"))
     from seedsigner.gui.components import FontAwesomeIconConstants, SeedSignerIconConstants
     chars = set()
     for cls in (FontAwesomeIconConstants, SeedSignerIconConstants):
@@ -44,7 +47,17 @@ def glyph(font, ch):
 
 
 def main():
-    out, fonts_dir, used = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]), json.load(open(sys.argv[3]))
+    from seedsigner.gui.components import GUIConstants
+    out, fonts_dir, locales = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]), ["en"] + sys.argv[4:]
+    used = {}
+    for locale, fonts in json.load(open(sys.argv[3])).items():
+        for key, chars in fonts.items():
+            if locale in locales:
+                used[key] = "".join(sorted(set(used.get(key, "")) | set(chars)))
+    paths = [p for d in (fonts_dir, fonts_dir.parent / "seedsigner-translations/fonts") for p in d.iterdir()]
+    # The language picker names every language in its own font; a build keeps only its languages' fonts
+    own = {f for loc, f in GUIConstants.BASE_LOCALE_FONTS.items() if loc in locales or loc == "default"}
+    foreign = set(GUIConstants.BASE_LOCALE_FONTS.values()) - own
     out.mkdir(parents=True, exist_ok=True)
     icons = icon_chars()
     sizes = {}
@@ -52,11 +65,9 @@ def main():
     total = 0
     for key, chars in sorted(used.items()):
         name, size = key.rsplit(":", 1)
-        path = next((p for p in fonts_dir.iterdir() if p.stem == name), None)
-        if path is None:
-            # The language picker's native names (Noto Sans JP and the like); the Pico build is English
-            print("skipping", key, "(not in %s)" % fonts_dir)
+        if name in foreign:
             continue
+        path = next(p for p in paths if p.stem == name)
         font = ImageFont.truetype(str(path), int(size))
         # A newline is a glyph to PIL's single-line calls, .notdef's box and advance
         want = {c for c in chars if c >= " " or c == "\n"} | (icons if name in ICON_FONTS else ascii_ | {"\n"})

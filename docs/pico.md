@@ -166,8 +166,11 @@ SeedSigner's own screens draw on the Pico's ST7789 through a PIL of the Pico's (
 Besides English, the UI comes in the 15 upstream languages whose script OpenSans covers (`LOCALES` in
 pico/Makefile: Latin, Cyrillic and Greek). `pico/tools/make_l10n.py` freezes their .mo catalogs, which
 `pico/lib/gettext.py` searches in place in flash, and the fonts are recorded rendering every screen in each
-of them: all 14305 getbbox calls match PIL's. They add about 540 KB of flash. Chinese, Japanese, Korean,
-Hindi, Thai, Persian and Arabic need their own Noto fonts, and the last four shaping that MicroPython lacks.
+of them: all 14305 getbbox calls match PIL's. They add about 540 KB of flash, and the language menu lists
+them in upstream's order. Chinese, Japanese and Korean bring a Noto font of 0.6 to 0.7 MB each, so each goes
+in on its own build (`make rp2 LOCALES=ja`, `ko` or `zh_Hans_CN`; 2.40 to 2.50 MB of firmware). Their glyphs
+match PIL's on all 9724 to 10647 getbbox calls, and on the device Japanese draws as fast as English with
+116 KB of heap free. Hindi, Thai, Persian and Arabic also need shaping, which MicroPython lacks.
 
 QR codes (`pico/lib/seedsigner/helpers/qr.py`) are encoded by qrcodegen in `_gfx` (level L, smallest
 version, no ECC boost, as qrcode and qrencode make them) and drawn straight onto the canvas when pasted, in
@@ -228,7 +231,7 @@ spend confirmed (txid d640897e4ff1fa4f75853dd2c89e4f6bcfebd1706fe8411d5386965c4e
 ## What the Pico build gives up
 
 Whatever `signer.wasm` does not do: legacy P2PKH, custom derivation paths, multisig of more than six keys or
-nested in P2SH, and the UI languages that need Noto fonts (upstream's BIP39 wordlist setting is hidden, so
+nested in P2SH, Hindi, Thai, Persian and Arabic, and more than one CJK language at once (upstream's BIP39 wordlist setting is hidden, so
 English words only on both). The tests that expect those stay on CPython.
 
 Electrum segwit seeds are read by the signer (`signer_seed_from_electrum`), which also checks their version and

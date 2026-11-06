@@ -14,7 +14,7 @@ spec.loader.exec_module(ours)
 from PIL import ImageFont
 
 fonts_dir = root / "src/seedsigner/resources/fonts"
-paths = {p.stem: str(p) for p in fonts_dir.iterdir()}
+paths = {p.stem: str(p) for d in (fonts_dir, fonts_dir.parent / "seedsigner-translations/fonts") for p in d.iterdir()}
 mine, theirs, bad, n = {}, {}, [], 0
 
 
@@ -26,7 +26,8 @@ def pair(name, size):
     return mine[k], theirs[k]
 
 
-cases = [(c[0], c[1], c[2], c[3]) for c in json.load(open(sys.argv[2])) if c[0] in paths]
+import pico_fonts  # a build makes only its languages' fonts
+cases = [(c[0], c[1], c[2], c[3]) for c in json.load(open(sys.argv[2])) if c[0].replace("-", "_") in pico_fonts.SIZES]
 rnd = random.Random(1)
 made = sorted({(c[0], c[1]) for c in cases})
 for name, size in made:

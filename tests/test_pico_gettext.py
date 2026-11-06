@@ -9,7 +9,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 L10N = ROOT / "src/seedsigner/resources/seedsigner-translations/l10n"
-LOCALES = ["ca", "cs", "de", "el", "es", "fr", "id", "it", "nl", "no", "pl", "pt_BR", "ru", "tr", "vi"]
+LOCALES = ["ca", "cs", "de", "el", "es", "fr", "id", "it", "nl", "no", "pl", "pt_BR", "ru", "tr", "vi", "ja", "ko", "zh_Hans_CN"]
 
 
 def originals(mo: bytes) -> list:
