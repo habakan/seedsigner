@@ -186,14 +186,25 @@ def version_bytes(name: str, network: str = SettingsConstants.MAINNET) -> bytes:
 
 
 
-def standard_account(derivation_path: str, network: str) -> tuple:
-    """(purpose, account) for a path signer.wasm derives, or UnsupportedDerivation."""
+def standard_account(derivation_path: str, network: str, electrum: bool = False) -> tuple:
+    """(purpose, account) for a path signer.wasm derives, or UnsupportedDerivation. An Electrum seed has m/0h alone,
+    which the signer derives as its P2WPKH account."""
     coin = "0h" if network == SettingsConstants.MAINNET else "1h"
     parts = derivation_path.replace("'", "h").rstrip("/").split("/")
+    if electrum:
+        if parts == ["m", "0h"]:
+            return 84, 0
+        raise UnsupportedDerivation(f"signer.wasm derives only m/0h for an Electrum seed, not {derivation_path}")
     ok = (len(parts) == 4 and parts[1] in ("49h", "84h", "86h")) or (len(parts) == 5 and parts[1] == "48h" and parts[4] == "2h")
     if ok and parts[0] == "m" and parts[2] == coin and parts[3].endswith("h") and parts[3][:-1].isdigit():
         return int(parts[1][:-1]), int(parts[3][:-1])
     raise UnsupportedDerivation(f"signer.wasm does not derive {derivation_path} on {network}")
+
+
+
+def _is_electrum(seed) -> bool:
+    from seedsigner.models.seed import ElectrumSeed  # seed.py imports this module
+    return isinstance(seed, ElectrumSeed)
 
 
 
@@ -202,7 +213,7 @@ def account_xpub(seed, derivation_path: str, network: str, sig_type: str = Setti
     The account xpub at a standard path. `xpub` is in the version SeedSigner shows (SLIP-132),
     `raw` is the 78-byte serialization and `fingerprint` the master's, as hex.
     """
-    purpose, account = standard_account(derivation_path, network)
+    purpose, account = standard_account(derivation_path, network, _is_electrum(seed))
     S = bitwasm.use(seed, network)
     raw = b58check_decode(S.xpub(purpose, account)["xpub"])
     version = seed.detect_version(derivation_path, network, sig_type)
@@ -282,7 +293,7 @@ def sign_message(seed, derivation_path: str, network: str, message: bytes) -> st
 
 def address(seed, derivation_path: str, network: str, is_change: bool, index: int) -> str:
     """The single sig address at index on the receive or change chain of a standard account path."""
-    purpose, account = standard_account(derivation_path, network)
+    purpose, account = standard_account(derivation_path, network, _is_electrum(seed))
     if purpose == 48:
         raise UnsupportedDerivation("signer.wasm lists single sig addresses only")
     return for_network(bitwasm.use(seed, network).address(purpose, account, int(is_change), index), network)

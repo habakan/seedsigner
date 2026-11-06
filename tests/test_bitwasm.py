@@ -174,3 +174,17 @@ def test_wasm_refuses_tampered_utxos_as_upstream(psbt_base64, tamper, error):
     tamper(psbt.inputs[0])
     with pytest.raises(getattr(psbt_errors, error)):
         WasmPSBTParser(psbt.serialize(), seed=PSBTTestData.seed, network=SettingsConstants.REGTEST)
+
+
+def test_electrum_seed_as_electrum_derives_it():
+    """Electrum's own segwit test seed (test_wallet_vertical): its zpub and first addresses, from signer.wasm."""
+    from seedsigner.helpers import wallet
+    from seedsigner.models.seed import ElectrumSeed
+    seed = ElectrumSeed("bitter grass shiver impose acquire brush forget axis eager alone wine silver".split())
+    net = SettingsConstants.MAINNET
+    assert wallet.account_xpub(seed, "m/0h", net)["xpub"] == \
+        "zpub6nsHdRuY92FsMKdbn9BfjBCG6X8pyhCibNP6uDvpnw2cyrVhecvHRMa3Ne8kdJZxjxgwnpbHLkcR4bfnhHy6auHPJyDTQ3kianeuVLdkCYQ"
+    assert wallet.address(seed, "m/0h", net, False, 0) == "bc1q3g5tmkmlvxryhh843v4dz026avatc0zzr6h3af"
+    assert wallet.address(seed, "m/0h", net, True, 0) == "bc1qdy94n2q5qcp0kg7v9yzwe6wvfkhnvyzje7nx2p"
+    with pytest.raises(wallet.UnsupportedDerivation):
+        wallet.account_xpub(seed, "m/84h/0h/0h", net)

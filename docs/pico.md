@@ -78,19 +78,19 @@ make -C pico mpy && make -C pico device-smoke PORT=...  # or run a script with t
 `models/psbt_wasm.py`'s `WasmPSBTParser` gives the PSBT views what embit's `PSBTParser` does, from
 `parser.wasm`'s plan and the signer's review alone; `models/psbt.py` picks it where embit is missing.
 `tests/conftest.py` repeats every successful embit parse in the suite with it and compares what the views
-read: 136 parses agree. `tests/test_flows_psbt_wasm.py` scans, reviews and signs through the views with
+read: 137 parses agree. `tests/test_flows_psbt_wasm.py` scans, reviews and signs through the views with
 both parsers, and `pico/tests/psbt.py` prints the same review and signed PSBT on the Pico 2 as on CPython.
 
 When the signer refuses a PSBT, the views show the upstream error for it: a missing or tampered input UTXO,
 a negative fee, an input this seed does not own, or a malformed OP_RETURN (the signer is started with its
-strict OP_RETURN option, matching upstream's rules). 27 upstream tests expect what the signer does not do
+strict OP_RETURN option, matching upstream's rules). 25 upstream tests expect what the signer does not do
 and are marked xfail in `tests/conftest.py`, each with its reason.
 
 Two differences, both from the signer checking each output itself:
 
 - P2WSH change claimed with this seed's fingerprint is shown as change, but signing is refused until a
   multisig descriptor proves it ("Verify multisig change"). The plan does not carry the output's witness
-  script, so it cannot be checked from the PSBT alone (3 of the 136 parses).
+  script, so it cannot be checked from the PSBT alone (3 of the 137 parses).
 - Inputs of mixed script types are accepted; embit's parser refuses them as "Mixed inputs".
 
 ## Multisig without embit
@@ -222,14 +222,18 @@ spend confirmed (txid d640897e4ff1fa4f75853dd2c89e4f6bcfebd1706fe8411d5386965c4e
 
 ## What the Pico build gives up
 
-Whatever `signer.wasm` does not do: Electrum seeds, non-English wordlists, legacy P2PKH, custom
-derivation paths, and multisig other than `wsh(sortedmulti())` of up to three keys. The tests that
-expect those stay on CPython.
+Whatever `signer.wasm` does not do: legacy P2PKH, custom derivation paths, multisig of more than six keys or
+nested in P2SH, and UI languages other than English (upstream's BIP39 wordlist setting is hidden, so English
+words only on both). The tests that expect those stay on CPython.
+
+Electrum segwit seeds are read by the signer (`signer_seed_from_electrum`), which also checks their version and
+derives their P2WPKH account at m/0h; as upstream, they have no other single sig script type. Upstream's
+multisig xpub for them (m/1h) and message signing are refused.
 
 ## Needed from bitwasm-signer
 
 - **Messages longer than 512 bytes.** SeedSigner has no limit, and one of its test messages is 576.
-- **More of upstream's multisig:** `wsh(multi())`, more than three keys, and nested P2SH-P2WSH.
+- **More of upstream's multisig:** more than six keys, and nested P2SH-P2WSH, both a change to the plan's ABI.
 
 ## Decisions
 

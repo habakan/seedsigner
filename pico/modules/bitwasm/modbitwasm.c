@@ -29,6 +29,7 @@ const void * signer_words_output(void);
 const void * signer_wordlist(void);
 int signer_init(unsigned int);
 int signer_seed_from_mnemonic(unsigned int, unsigned int);
+int signer_seed_from_electrum(unsigned int, unsigned int);
 int signer_seed_from_seedqr(unsigned int, unsigned int);
 int signer_load_seed(void);
 void signer_unload(void);
@@ -203,6 +204,11 @@ static mp_obj_t w_signer_seed_from_mnemonic(size_t n, const mp_obj_t *a) {
     return mp_obj_new_int(signer_seed_from_mnemonic((unsigned int)mp_obj_get_int_truncated(a[0]), (unsigned int)mp_obj_get_int_truncated(a[1])));
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(w_signer_seed_from_mnemonic_obj, 2, 2, w_signer_seed_from_mnemonic);
+static mp_obj_t w_signer_seed_from_electrum(size_t n, const mp_obj_t *a) {
+    (void)n, (void)a;
+    return mp_obj_new_int(signer_seed_from_electrum((unsigned int)mp_obj_get_int_truncated(a[0]), (unsigned int)mp_obj_get_int_truncated(a[1])));
+}
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(w_signer_seed_from_electrum_obj, 2, 2, w_signer_seed_from_electrum);
 
 static mp_obj_t w_signer_seed_from_seedqr(size_t n, const mp_obj_t *a) {
     (void)n, (void)a;
@@ -426,6 +432,7 @@ static const mp_rom_map_elem_t globals[] = {
     { MP_ROM_QSTR(MP_QSTR_signer_wordlist), MP_ROM_PTR(&w_signer_wordlist_obj) },
     { MP_ROM_QSTR(MP_QSTR_signer_init), MP_ROM_PTR(&w_signer_init_obj) },
     { MP_ROM_QSTR(MP_QSTR_signer_seed_from_mnemonic), MP_ROM_PTR(&w_signer_seed_from_mnemonic_obj) },
+    { MP_ROM_QSTR(MP_QSTR_signer_seed_from_electrum), MP_ROM_PTR(&w_signer_seed_from_electrum_obj) },
     { MP_ROM_QSTR(MP_QSTR_signer_seed_from_seedqr), MP_ROM_PTR(&w_signer_seed_from_seedqr_obj) },
     { MP_ROM_QSTR(MP_QSTR_signer_load_seed), MP_ROM_PTR(&w_signer_load_seed_obj) },
     { MP_ROM_QSTR(MP_QSTR_signer_unload), MP_ROM_PTR(&w_signer_unload_obj) },

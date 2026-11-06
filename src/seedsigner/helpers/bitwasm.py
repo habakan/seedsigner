@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 PARSER_SHA256 = "d9318981f96de22a8d8976c6e0e1a6fa488bd94b00067b562b481892c2fbbdc7"
 # The Pico assembles UR in Python, so it runs the build without the UR decoder: 42 KB less of WAMR's pool
 PARSER_NO_UR_SHA256 = "a5a9d986f413a07c2f2f2c57b5151da0dfdddb09afbce64d45babb60170d080a"
-SIGNER_SHA256 = "b8b27e5f8f3b098d2f6d0704df074996418c46ee6320a67cfecfa8513f9926dc"
+SIGNER_SHA256 = "f1d5a5a7d633230709d2840e8d21be5675f3f26f82a6e3599bee6f70a19f3736"
 
 # Upstream's rules: OP_RETURN of complete pushes only, and SegWit v0 inputs signed without non_witness_utxo
 SIGNER_OPTIONS = {"strict_op_return": True, "prevtx_optional": True}

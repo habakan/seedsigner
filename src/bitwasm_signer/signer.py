@@ -113,12 +113,20 @@ class Signer:
 
     def seed_from_mnemonic(self, mnemonic: bytearray, passphrase: bytearray | None = None):
         """NFKD-normalised UTF-8. PBKDF2 2048 rounds."""
+        return self._seed_from("signer_seed_from_mnemonic", mnemonic, passphrase)
+
+    def seed_from_electrum(self, mnemonic: bytearray, passphrase: bytearray | None = None):
+        """An Electrum segwit seed, its passphrase as Electrum normalises it. The P2WPKH account is then m/0h,
+        and the other purposes and message signing are refused."""
+        return self._seed_from("signer_seed_from_electrum", mnemonic, passphrase)
+
+    def _seed_from(self, fn: str, mnemonic: bytearray, passphrase: bytearray | None):
         passphrase = bytearray() if passphrase is None else passphrase
         try:
             self._secret(mnemonic, passphrase)
             self._input(mnemonic, passphrase)
-            if not self._e.signer_seed_from_mnemonic(len(mnemonic), len(passphrase)):
-                raise RuntimeError("seed_from_mnemonic failed")
+            if not getattr(self._e, fn)(len(mnemonic), len(passphrase)):
+                raise RuntimeError(fn[7:] + " failed")
         finally:
             mnemonic[:] = bytes(len(mnemonic))
             passphrase[:] = bytes(len(passphrase))

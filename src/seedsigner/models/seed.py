@@ -1,7 +1,6 @@
 import logging
 import unicodedata
 import hashlib
-import hmac
 
 from typing import List
 
@@ -192,25 +191,27 @@ class ElectrumSeed(Seed):
     def _generate_seed(self):
         if len(self._mnemonic) != 12:
             raise InvalidSeedException(f"Unsupported Electrum seed length: {len(self._mnemonic)}")
-
-        s = hmac.digest(b"Seed version", self.mnemonic_str.encode('utf8'), hashlib.sha512).hex()
-        prefix = s[0:3]
-
-        # only support Electrum Segwit version for now
-        if SettingsConstants.ELECTRUM_SEED_SEGWIT == prefix:
-            seed_bytes = hashlib.pbkdf2_hmac('sha512', self.mnemonic_str.encode('utf-8'), b'electrum' + self._passphrase.encode('utf-8'), iterations = SettingsConstants.ELECTRUM_PBKDF2_ROUNDS)
-
-        else:
-            raise InvalidSeedException(f"Unsupported Electrum seed format: {prefix}")
-
+        self._seed_bytes = None
         bitwasm.forget(self)
-        self._seed_bytes = seed_bytes
         bitwasm.use(self)
 
 
     def load_into(self, signer):
-        signer.load_seed(bytearray(self._seed_bytes))
+        """signer.wasm checks the Electrum segwit version and derives the key, its P2WPKH account at m/0h."""
+        try:
+            signer.seed_from_electrum(bytearray(self.mnemonic_str.encode()), bytearray(self._passphrase.encode()))
+        except (RuntimeError, ValueError) as e:
+            raise InvalidSeedException(f"Unsupported Electrum seed format: {e!r}")
         self._fingerprint = signer.fingerprint
+
+
+    @property
+    def seed_bytes(self) -> bytes:
+        # As Seed.seed_bytes, for embit on CPython alone
+        if self._seed_bytes is None:
+            self._seed_bytes = hashlib.pbkdf2_hmac("sha512", self.mnemonic_str.encode(), b"electrum" + self._passphrase.encode(),
+                                                   SettingsConstants.ELECTRUM_PBKDF2_ROUNDS)
+        return self._seed_bytes
 
 
     def set_passphrase(self, passphrase: str, regenerate_seed: bool = True):
