@@ -6,6 +6,8 @@ MPY_DIR := ../build/micropython
 URTYPES ?= $(shell ../.venv/bin/python -c "import os, urtypes; print(os.path.dirname(urtypes.__file__))")
 WAMR_ROOT ?= $(BITWASM_SIGNER)/third_party/wasm-micro-runtime
 OUT := ../build/pico
+# UI languages frozen in, the ones whose script OpenSans covers; fonts_used.json is recorded for the same
+LOCALES ?= ca cs de el es fr id it nl no pl pt_BR ru tr vi
 BS = $(BITWASM_SIGNER)
 SIGNER_SRC = $(addprefix $(BS)/, signer/wasm_main.c signer/core.c signer/address.c signer/bip32.c signer/sighash.c \
   signer/bip39.c signer/seedqr.c signer/bip85.c signer/multisig.c signer/cbor.c signer/ripemd160.c signer/sha512.c \
@@ -41,6 +43,7 @@ py:
 	rm $(OUT)/py/seedsigner/hardware/displays/st7789_mpy.py
 	../.venv/bin/python tools/make_fonts.py $(OUT)/py/pico_fonts ../src/seedsigner/resources/fonts fonts_used.json
 	../.venv/bin/python tools/make_images.py $(OUT)/py/pico_images ../src/seedsigner/resources/img > /dev/null
+	../.venv/bin/python tools/make_l10n.py $(OUT)/py/pico_l10n ../src/seedsigner/resources/seedsigner-translations/l10n $(LOCALES) > /dev/null
 	printf 'NAME = "%s"\nFORK = "%s"\nSHORT_COMMIT_HASH = "%s"\n' "$$(git describe --tags --exact-match 2>/dev/null || git rev-parse --abbrev-ref HEAD)" \
 	  "$$(git remote get-url origin | sed -E 's|.*[:/]([^/]+)/[^/]+$$|\1|')" "$$(git rev-parse --short HEAD)" > $(OUT)/py/pico_version.py
 	python3 -c "import sys; print('PARSER = ' + repr(open(sys.argv[1], 'rb').read()))" \

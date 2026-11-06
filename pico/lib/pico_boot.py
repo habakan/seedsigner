@@ -40,3 +40,15 @@ def _scan_without_preview_thread(self):
 
 
 ScanScreen.__post_init__ = _scan_without_preview_thread
+
+import pico_l10n
+from seedsigner.models.settings_definition import SettingsConstants, SettingsDefinition
+
+
+def _frozen_languages(cls=None):
+    # The catalogs frozen as pico_l10n (pico/Makefile's LOCALES), where upstream walks resources/ on the filesystem
+    return [(c, n) for c, n in SettingsConstants.ALL_LOCALES.items() if c == "en" or c in pico_l10n.LOCALES]
+
+
+SettingsConstants.get_detected_languages = classmethod(_frozen_languages)
+SettingsDefinition.get_settings_entry(SettingsConstants.SETTING__LOCALE).selection_options = _frozen_languages()

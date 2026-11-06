@@ -161,8 +161,13 @@ SeedSigner's own screens draw on the Pico's ST7789 through a PIL of the Pico's (
 - `RPi.GPIO` is a shim mapping the Pi's header pins to bitwasm-signer-pico's joystick and keys, so
   `hardware/buttons.py` runs unchanged; the current two buttons are its down and press.
 
-`pico/tests/screen.py` draws the main menu on the device in 0.47 s, leaving 106 KB of heap. English only
-for now.
+`pico/tests/screen.py` draws the main menu on the device in 0.47 s, leaving 106 KB of heap.
+
+Besides English, the UI comes in the 15 upstream languages whose script OpenSans covers (`LOCALES` in
+pico/Makefile: Latin, Cyrillic and Greek). `pico/tools/make_l10n.py` freezes their .mo catalogs, which
+`pico/lib/gettext.py` searches in place in flash, and the fonts are recorded rendering every screen in each
+of them: all 14305 getbbox calls match PIL's. They add about 540 KB of flash. Chinese, Japanese, Korean,
+Hindi, Thai, Persian and Arabic need their own Noto fonts, and the last four shaping that MicroPython lacks.
 
 QR codes (`pico/lib/seedsigner/helpers/qr.py`) are encoded by qrcodegen in `_gfx` (level L, smallest
 version, no ECC boost, as qrcode and qrencode make them) and drawn straight onto the canvas when pasted, in
@@ -196,8 +201,8 @@ RAM decided most of the way there:
 | its stack 4 KB (1.7 KB used at most), pool 104 KB; C stack 20 KB, core1's 16 KB | 262 |
 
 Now the GC heap is about 259 KB beside 215 KB of static RAM. About 137 KB of it is free on the main menu,
-100 KB while scanning and 80 KB on the PSBT overview. The firmware, SeedSigner frozen in, is 1.75 MB of
-its 3 MB of flash; 1 MB is left for the filesystem.
+100 KB while scanning and 80 KB on the PSBT overview. The firmware, SeedSigner and 15 languages frozen in, is
+2.29 MB of its 3 MB of flash; 1 MB is left for the filesystem.
 
 - The canvas is a list of drawing operations; an opaque one drops what it hides, or a keyboard's redraws
   pile up. A View's finished Screen is let go, or the back stack holds one per seed word.
@@ -223,8 +228,8 @@ spend confirmed (txid d640897e4ff1fa4f75853dd2c89e4f6bcfebd1706fe8411d5386965c4e
 ## What the Pico build gives up
 
 Whatever `signer.wasm` does not do: legacy P2PKH, custom derivation paths, multisig of more than six keys or
-nested in P2SH, and UI languages other than English (upstream's BIP39 wordlist setting is hidden, so English
-words only on both). The tests that expect those stay on CPython.
+nested in P2SH, and the UI languages that need Noto fonts (upstream's BIP39 wordlist setting is hidden, so
+English words only on both). The tests that expect those stay on CPython.
 
 Electrum segwit seeds are read by the signer (`signer_seed_from_electrum`), which also checks their version and
 derives their P2WPKH account at m/0h; as upstream, they have no other single sig script type. Upstream's

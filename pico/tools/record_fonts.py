@@ -1,9 +1,10 @@
 """
 Which fonts, sizes and characters SeedSigner's screens use: renders every screen with the screenshot
-generator and records each getbbox and text call. Writes pico/fonts_used.json for make_fonts.py, and the
-getbbox calls with PIL's answers beside it for pico/tests/check_fonts.py.
+generator and records each getbbox and text call, in English and each locale named after the file. Writes
+pico/fonts_used.json for make_fonts.py, and the getbbox calls with PIL's answers beside it for
+pico/tests/check_fonts.py.
 
-    .venv/bin/python pico/tools/record_fonts.py pico/fonts_used.json
+    .venv/bin/python pico/tools/record_fonts.py pico/fonts_used.json de es
 """
 import json, os, sys
 from PIL import ImageDraw, ImageFont
@@ -31,7 +32,9 @@ import pytest
 sys.path.insert(0, "src")
 from seedsigner.models import psbt_parser
 psbt_parser.PSBTParser._check_with_bitwasm = lambda self: None  # the generator's PSBTs predate the wasm cross-check
-rc = pytest.main(["-q", "-p", "no:cacheprovider", "tests/screenshot_generator/generator.py", "--locale", "en"])
+rc = 0
+for locale in ["en"] + sys.argv[2:]:
+    rc |= pytest.main(["-q", "-p", "no:cacheprovider", "tests/screenshot_generator/generator.py", "--locale", locale])
 json.dump({k: "".join(sorted(v)) for k, v in sorted(used.items())}, open(sys.argv[1], "w"), indent=1, ensure_ascii=False)
 uniq = {json.dumps(c) for c in calls}
 json.dump([json.loads(c) for c in sorted(uniq)], open(sys.argv[1].replace(".json", "_bbox.json"), "w"))
