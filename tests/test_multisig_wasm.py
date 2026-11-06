@@ -52,6 +52,31 @@ def test_watched_without_a_seed_of_ours():
             d, index=2, is_change=True, embit_network="regtest")
 
 
+# abandon x11 about and five others at m/48h/0h/0h/2h, as bitwasm-signer's test_multisig.c has them
+SIX = ["[73c5da0a/48h/0h/0h/2h]xpub6DkFAXWQ2dHxq2vatrt9qyA3bXYU4ToWQwCHbf5XB2mSTexcHZCeKS1VZYcPoBd5X8yVcbXFHJR9R8UCVpt82VX1VhR28mCyxUFL4r6KFrf",
+       "[3f635a63/48h/0h/0h/2h]xpub6FHZCoNb3tg3o1GAJQxSwgFNF8mLRtTk2GgkF7n5rwzoxBhUEdFWa8cyZRHqytAzKZWsKz8627cQEMCCfR5GDSv6yXegqirpgDUX41Pxybr",
+       "[b8688df1/48h/0h/0h/2h]xpub6FQya7zGhR92kacYsNnjreouvnHJMpXYsUXnW6NJJAJRCKsa26TzDy4LdnGhEurr3d6y1J8PJ7EEMKQp74XTqYvmGJNogYXSKDszYHtF8mX",
+       "[28645006/48h/0h/0h/2h]xpub6DnEBNkSJKBYQmsbhS1sP9cNdtU5c9PLFGCjTJmxicxc13WB8zNNGQazabQpyFAGW5bV9tMko4uBxDxjUKL6dSAcx1tEbgEHtgSqyRsekh6",
+       "[5c9e228d/48h/0h/0h/2h]xpub6EgGHjcvovyN3nK921zAGPfuB41cJXkYRdt3tLGmiMyvbgHpss4X1eRZwShbEBb1znz2e2bCkCED87QZpin3sSYKbmCzQ9Sc7LaV98ngdeX",
+       "[5436d724/48h/0h/0h/2h]xpub6E79FaRWLSJCAgA2jDHRvyrWKwT6aSmR685zptzyYPvmUd44omcxZ1NAzDtbdFBvEADjcVbV4NzTDwQeU6oiSV9KGiMSWhjANZjbfUHkm3Y"]
+
+
+@pytest.mark.parametrize("descriptor", [
+    "wsh(sortedmulti(3,%s))" % ",".join(k + "/{0,1}/*" for k in SIX),
+    "wsh(multi(4,%s))" % ",".join(k + "/{0,1}/*" for k in reversed(SIX)),
+    "wsh(multi(2,%s))" % ",".join(k + "/{0,1}/*" for k in SIX[1::-1] + SIX[2:3]),
+])
+def test_six_keys_and_multi_as_embit(descriptor):
+    d = Descriptor.from_string(descriptor)
+    for seeds in ([Seed(("abandon " * 11 + "about").split())], []):
+        m = wallet.Multisig(descriptor)
+        assert m.register(seeds, SettingsConstants.MAINNET) and (m.seed is None) == (not seeds)
+        assert wallet.multisig_policy(m) == wallet.multisig_policy(d)
+        for change in (False, True):
+            want = embit_utils.get_multisig_address(d, index=5, is_change=change, embit_network="main")
+            assert wallet.multisig_address(m, 5, change, SettingsConstants.MAINNET) == want
+
+
 def test_an_unreadable_descriptor_does_not_register():
     assert not wallet.Multisig("wsh(pk(nothing))").register([PSBTTestData.seed], NET)
 

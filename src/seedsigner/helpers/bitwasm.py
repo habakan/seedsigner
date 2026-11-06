@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 PARSER_SHA256 = "d9318981f96de22a8d8976c6e0e1a6fa488bd94b00067b562b481892c2fbbdc7"
 # The Pico assembles UR in Python, so it runs the build without the UR decoder: 42 KB less of WAMR's pool
 PARSER_NO_UR_SHA256 = "a5a9d986f413a07c2f2f2c57b5151da0dfdddb09afbce64d45babb60170d080a"
-SIGNER_SHA256 = "e0bfe7d7a9409ee698c3fc49228b7abb6df6d4c70dcdc9bd9eb115912490a473"
+SIGNER_SHA256 = "4627150dd3146539fe070f220a17d3c17b9caafb01b48732e6649997edddbe83"
 
 OWNER_EXTERNAL, OWNER_CHANGE, OWNER_SELF = 0, 1, 2
 
