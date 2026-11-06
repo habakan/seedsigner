@@ -8,9 +8,14 @@ import gettext
 import pathlib
 import sys
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "src"))
+from seedsigner.models.settings_definition import SettingsConstants
+
 out, src, locales = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]), sys.argv[3:]
 out.mkdir(parents=True, exist_ok=True)
-(out / "__init__.py").write_text("LOCALES = %r\n" % locales)
+# English and the locales given, in upstream's menu order, which a MicroPython dict does not keep
+order = [c for c in SettingsConstants.ALL_LOCALES if c == "en" or c in locales]
+(out / "__init__.py").write_text("LOCALES = %r\n" % order)
 for locale in locales:
     mo = (src / locale / "LC_MESSAGES" / "messages.mo").read_bytes()
     with open(src / locale / "LC_MESSAGES" / "messages.mo", "rb") as f:

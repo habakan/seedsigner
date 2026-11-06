@@ -42,3 +42,9 @@ def test_every_message_as_cpython_translates_it(tmp_path, monkeypatch):
     monkeypatch.setitem(os.environ, "LANGUAGE", "en")
     assert pico.gettext("Settings") == "Settings" and pico.ngettext("input", "inputs", 2) == "inputs"
     assert checked > 1000
+
+
+def test_the_language_menu_keeps_upstreams_order(tmp_path):
+    subprocess.run([sys.executable, ROOT / "pico/tools/make_l10n.py", tmp_path, L10N, "vi", "de"],
+                   check=True, capture_output=True)
+    assert (tmp_path / "__init__.py").read_text() == "LOCALES = ['de', 'en', 'vi']\n"

@@ -47,7 +47,7 @@ from seedsigner.models.settings_definition import SettingsConstants, SettingsDef
 
 def _frozen_languages(cls=None):
     # The catalogs frozen as pico_l10n (pico/Makefile's LOCALES), where upstream walks resources/ on the filesystem
-    return [(c, n) for c, n in SettingsConstants.ALL_LOCALES.items() if c == "en" or c in pico_l10n.LOCALES]
+    return [(c, SettingsConstants.ALL_LOCALES[c]) for c in pico_l10n.LOCALES]
 
 
 SettingsConstants.get_detected_languages = classmethod(_frozen_languages)
