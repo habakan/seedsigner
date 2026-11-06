@@ -1,8 +1,9 @@
 """
 Keys and addresses for a Seed, from signer.wasm. The Pico build's replacement for embit_utils.
 
-signer.wasm derives only standard account paths: m/49h, m/84h and m/86h, and m/48h/.../2h, each
-with this network's coin type. Anything else raises UnsupportedDerivation.
+signer.wasm addresses and signs messages on standard account paths: m/49h, m/84h and m/86h, and
+m/48h/.../2h, each with this network's coin type; xpubs come from any path. Anything else raises
+UnsupportedDerivation.
 """
 import hashlib
 
@@ -202,6 +203,21 @@ def standard_account(derivation_path: str, network: str, electrum: bool = False)
 
 
 
+def parse_path(derivation_path: str) -> list:
+    """m/48h/1h/0h/2h as BIP32 indices, 2**31 added for a hardened step."""
+    parts = derivation_path.replace("'", "h").rstrip("/").split("/")
+    if parts[0] != "m" or not 2 <= len(parts) <= 9:
+        raise UnsupportedDerivation(f"{derivation_path} is not a path of one to eight steps")
+    try:
+        path = [int(p[:-1]) + 2**31 if p.endswith("h") else int(p) for p in parts[1:]]
+    except ValueError:
+        raise UnsupportedDerivation(f"{derivation_path} is not a derivation path")
+    if not all(0 <= i < 2**32 for i in path):
+        raise UnsupportedDerivation(f"{derivation_path} steps past 2**31")
+    return path
+
+
+
 def _is_electrum(seed) -> bool:
     from seedsigner.models.seed import ElectrumSeed  # seed.py imports this module
     return isinstance(seed, ElectrumSeed)
@@ -213,9 +229,14 @@ def account_xpub(seed, derivation_path: str, network: str, sig_type: str = Setti
     The account xpub at a standard path. `xpub` is in the version SeedSigner shows (SLIP-132),
     `raw` is the 78-byte serialization and `fingerprint` the master's, as hex.
     """
-    purpose, account = standard_account(derivation_path, network, _is_electrum(seed))
     S = bitwasm.use(seed, network)
-    raw = b58check_decode(S.xpub(purpose, account)["xpub"])
+    try:
+        purpose, account = standard_account(derivation_path, network, _is_electrum(seed))
+        raw = b58check_decode(S.xpub(purpose, account)["xpub"])
+    except UnsupportedDerivation:
+        if _is_electrum(seed):
+            raise
+        raw = b58check_decode(S.path_xpub(parse_path(derivation_path)))
     version = seed.detect_version(derivation_path, network, sig_type)
     raw = version + raw[4:]
     return {"xpub": b58check_encode(raw), "raw": raw, "fingerprint": S.fingerprint}
@@ -259,7 +280,7 @@ def for_network(address: str, network: str) -> str:
 
 
 
-MESSAGE_MAX = 512  # signer.wasm's limit, in bytes
+MESSAGE_MAX = 1024  # signer.wasm's limit, in bytes
 
 
 

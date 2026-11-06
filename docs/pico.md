@@ -83,7 +83,7 @@ both parsers, and `pico/tests/psbt.py` prints the same review and signed PSBT on
 
 When the signer refuses a PSBT, the views show the upstream error for it: a missing or tampered input UTXO,
 a negative fee, an input this seed does not own, or a malformed OP_RETURN (the signer is started with its
-strict OP_RETURN option, matching upstream's rules). 25 upstream tests expect what the signer does not do
+strict OP_RETURN option, matching upstream's rules). 20 upstream tests expect what the signer does not do
 and are marked xfail in `tests/conftest.py`, each with its reason.
 
 Two differences, both from the signer checking each output itself:
@@ -230,8 +230,8 @@ spend confirmed (txid d640897e4ff1fa4f75853dd2c89e4f6bcfebd1706fe8411d5386965c4e
 
 ## What the Pico build gives up
 
-Whatever `signer.wasm` does not do: legacy P2PKH, custom derivation paths, multisig of more than six keys or
-nested in P2SH, Hindi, Thai, Persian and Arabic, and more than one CJK language at once (upstream's BIP39 wordlist setting is hidden, so
+Whatever `signer.wasm` does not do: legacy P2PKH, addresses and message signing off the standard paths (a
+custom derivation's xpub is exported), multisig of more than six keys or nested in P2SH, Hindi, Thai, Persian and Arabic, and more than one CJK language at once (upstream's BIP39 wordlist setting is hidden, so
 English words only on both). The tests that expect those stay on CPython.
 
 Electrum segwit seeds are read by the signer (`signer_seed_from_electrum`), which also checks their version and
@@ -240,7 +240,7 @@ multisig xpub for them (m/1h) and message signing are refused.
 
 ## Needed from bitwasm-signer
 
-- **Messages longer than 512 bytes.** SeedSigner has no limit, and one of its test messages is 576.
+- **Messages longer than 1024 bytes.** SeedSigner has no limit; its longest test message is 576.
 - **More of upstream's multisig:** more than six keys, and nested P2SH-P2WSH, both a change to the plan's ABI.
 
 ## Decisions

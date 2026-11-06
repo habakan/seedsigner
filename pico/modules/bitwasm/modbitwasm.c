@@ -40,6 +40,7 @@ int signer_display(void);
 int signer_facts(void);
 int signer_sign(void);
 int signer_xpub(unsigned int, unsigned int);
+int signer_path_xpub(unsigned int);
 int signer_address(unsigned int, unsigned int, unsigned int, unsigned int);
 int signer_find_address(unsigned int, unsigned int, unsigned int);
 int signer_mnemonic_from_entropy(unsigned int);
@@ -271,6 +272,12 @@ static mp_obj_t w_signer_xpub(size_t n, const mp_obj_t *a) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(w_signer_xpub_obj, 2, 2, w_signer_xpub);
 
+static mp_obj_t w_signer_path_xpub(size_t n, const mp_obj_t *a) {
+    (void)n, (void)a;
+    return mp_obj_new_int(signer_path_xpub((unsigned int)mp_obj_get_int_truncated(a[0])));
+}
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(w_signer_path_xpub_obj, 1, 1, w_signer_path_xpub);
+
 static mp_obj_t w_signer_address(size_t n, const mp_obj_t *a) {
     (void)n, (void)a;
     return mp_obj_new_int(signer_address((unsigned int)mp_obj_get_int_truncated(a[0]), (unsigned int)mp_obj_get_int_truncated(a[1]), (unsigned int)mp_obj_get_int_truncated(a[2]), (unsigned int)mp_obj_get_int_truncated(a[3])));
@@ -443,6 +450,7 @@ static const mp_rom_map_elem_t globals[] = {
     { MP_ROM_QSTR(MP_QSTR_signer_facts), MP_ROM_PTR(&w_signer_facts_obj) },
     { MP_ROM_QSTR(MP_QSTR_signer_sign), MP_ROM_PTR(&w_signer_sign_obj) },
     { MP_ROM_QSTR(MP_QSTR_signer_xpub), MP_ROM_PTR(&w_signer_xpub_obj) },
+    { MP_ROM_QSTR(MP_QSTR_signer_path_xpub), MP_ROM_PTR(&w_signer_path_xpub_obj) },
     { MP_ROM_QSTR(MP_QSTR_signer_address), MP_ROM_PTR(&w_signer_address_obj) },
     { MP_ROM_QSTR(MP_QSTR_signer_find_address), MP_ROM_PTR(&w_signer_find_address_obj) },
     { MP_ROM_QSTR(MP_QSTR_signer_mnemonic_from_entropy), MP_ROM_PTR(&w_signer_mnemonic_from_entropy_obj) },

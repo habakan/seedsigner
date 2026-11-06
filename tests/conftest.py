@@ -4,18 +4,13 @@ import pytest
 # Upstream tests whose psbts signer.wasm refuses, so PSBTParser now stops where embit
 # alone went on. Strict, so a test that starts passing (signer.wasm grew) is noticed.
 NESTED_OR_LEGACY = "signer.wasm signs P2WPKH, P2SH-P2WPKH, P2TR key path and P2WSH multisig only"
-COIN_TYPE = "the fixture's paths are not this network's BIP44 coin type"
 MALFORMED = "a fixture parser.wasm rejects: no outputs, or a non_witness_utxo that is not the input's"
 ALREADY_SIGNED = "signer.wasm has nothing to sign when this seed's signature is already there"
-MESSAGE_MAX = "signer.wasm signs messages of at most 512 bytes; the multipage scenario's is 576"
-NOT_STANDARD = "signer.wasm derives only m/49h, m/84h, m/86h and m/48h/.../2h, with this network's coin type"
 SPK_MAX = "parser.wasm takes output scripts of at most 83 bytes, so an OP_RETURN of at most 80"
 
 BITWASM_REFUSES = {
     "test_decodepsbtqr.py::test_base64_1_input_p2sh_p2wsh": NESTED_OR_LEGACY,
-    "test_flows_psbt.py::TestPSBTFlows::test_scan_psbt_first_then_correct_seedqr_flow": COIN_TYPE,
     "test_flows_psbt.py::TestPSBTFlows::test_scan_multisig_psbt_seed_already_signed_flow": ALREADY_SIGNED,
-    "test_flows_psbt.py::TestPSBTFlows::test_parse_and_display_op_return_content": COIN_TYPE,
     "test_psbt_parser.py::TestPSBTParser::test_singlesig_legacy_p2pkh": NESTED_OR_LEGACY,
     "test_psbt_parser.py::TestPSBTParser::test_multisig_nested_segwit": NESTED_OR_LEGACY,
     "test_psbt_parser.py::TestPSBTParser::test_multisig_legacy_p2sh": NESTED_OR_LEGACY,
@@ -29,9 +24,6 @@ BITWASM_REFUSES = {
     "test_psbt_parser.py::TestPSBTParserOutputOwnership::test__parse__counts_a_different_quorum_as_a_spend": NESTED_OR_LEGACY,
     "test_psbt_parser.py::TestPSBTParserOutputOwnership::test__parse__counts_a_different_quorum_as_a_spend_when_its_xpubs_are_supplied": NESTED_OR_LEGACY,
     "test_psbt_parser.py::TestPSBTParserOutputOwnership::test__parse__counts_a_different_quorum_as_change_if_no_global_xpubs": NESTED_OR_LEGACY,
-    "test_encodepsbtqr.py::test_ur_xpub_qr": NOT_STANDARD,  # mainnet with m/48h/1h; the testnet half is its own test
-    "test_flows_seed.py::TestSeedFlows::test_export_xpub_custom_derivation_flow": NOT_STANDARD,
-    "test_flows_seed.py::TestMessageSigningFlows::test_sign_message_flow": MESSAGE_MAX,
     "test_psbt_parser.py::test_parse_op_return_content_pushdata2": SPK_MAX,
     # A parametrized test's psbts, by the start of their base64: P2PKH, P2SH-P2WSH and P2SH multisig
     "test_psbt_parser.py::TestPSBTInputAmountVerification::test_untampered_psbts_verify[cHNidP8BADMCAAAAAa79*": NESTED_OR_LEGACY,
