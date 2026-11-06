@@ -4,7 +4,6 @@ import pytest
 # Upstream tests whose psbts signer.wasm refuses, so PSBTParser now stops where embit
 # alone went on. Strict, so a test that starts passing (signer.wasm grew) is noticed.
 NESTED_OR_LEGACY = "signer.wasm signs P2WPKH, P2SH-P2WPKH, P2TR key path and P2WSH multisig only"
-NO_PREVTX = "signer.wasm requires non_witness_utxo for segwit v0 inputs"
 COIN_TYPE = "the fixture's paths are not this network's BIP44 coin type (or Electrum's m/0h)"
 MALFORMED = "a fixture parser.wasm rejects: no outputs, or a non_witness_utxo that is not the input's"
 ALREADY_SIGNED = "signer.wasm has nothing to sign when this seed's signature is already there"
@@ -13,9 +12,7 @@ NOT_STANDARD = "signer.wasm derives only m/49h, m/84h, m/86h and m/48h/.../2h, w
 SPK_MAX = "parser.wasm takes output scripts of at most 83 bytes, so an OP_RETURN of at most 80"
 
 BITWASM_REFUSES = {
-    "test_decodepsbtqr.py::test_base64_2_input_p2wsh": NO_PREVTX,
     "test_decodepsbtqr.py::test_base64_1_input_p2sh_p2wsh": NESTED_OR_LEGACY,
-    "test_decodepsbtqr.py::test_specter_multisig_animated_qr": NO_PREVTX,
     "test_flows_psbt.py::TestPSBTFlows::test_scan_psbt_first_then_correct_seedqr_flow": COIN_TYPE,
     "test_flows_psbt.py::TestPSBTFlows::test_scan_psbt_first_then_load_electrum_seed": COIN_TYPE,
     "test_flows_psbt.py::TestPSBTFlows::test_scan_multisig_psbt_seed_already_signed_flow": ALREADY_SIGNED,
@@ -27,7 +24,6 @@ BITWASM_REFUSES = {
     "test_psbt_parser.py::TestPSBTParser::test_verify_multisig_output": NESTED_OR_LEGACY,
     "test_psbt_parser.py::test_p2sh_legacy_multisig": NESTED_OR_LEGACY,
     "test_psbt_parser.py::TestPSBTParserOptimizations::test_zero_fingerprint_fill_over_many_inputs": MALFORMED,
-    "test_psbt_parser.py::TestPSBTParserSeedOwnership::test__parse__verified_derivation_paths_empty_for_not_owned_input": MALFORMED,
     "test_psbt_parser.py::TestPSBTParserOutputOwnership::test__parse__rejects_a_multisig_output_built_from_other_peoples_keys": NESTED_OR_LEGACY,
     "test_psbt_parser.py::TestPSBTParserOutputOwnership::test__parse__rejects_a_multisig_output_that_hides_this_seed_behind_another_fingerprint": NESTED_OR_LEGACY,
     "test_psbt_parser.py::TestPSBTParserOutputOwnership::test__parse__rejects_a_multisig_output_whose_supplied_script_is_not_its_own": NESTED_OR_LEGACY,
@@ -39,7 +35,6 @@ BITWASM_REFUSES = {
     "test_flows_seed.py::TestSeedFlows::test_export_xpub_electrum_seed_flow": NOT_STANDARD,
     "test_flows_seed.py::TestMessageSigningFlows::test_sign_message_flow": MESSAGE_MAX,
     "test_psbt_parser.py::test_parse_op_return_content_pushdata2": SPK_MAX,
-    "test_psbt_parser.py::TestPSBTParserInputScripts::test__parse__checks_input_scripts_whoever_the_input_belongs_to": NO_PREVTX,
     # A parametrized test's psbts, by the start of their base64: P2PKH, P2SH-P2WSH and P2SH multisig
     "test_psbt_parser.py::TestPSBTInputAmountVerification::test_untampered_psbts_verify[cHNidP8BADMCAAAAAa79*": NESTED_OR_LEGACY,
     "test_psbt_parser.py::TestPSBTInputAmountVerification::test_untampered_psbts_verify[cHNidP8BADMCAAAAAbtb*": NESTED_OR_LEGACY,

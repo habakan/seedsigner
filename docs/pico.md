@@ -78,19 +78,19 @@ make -C pico mpy && make -C pico device-smoke PORT=...  # or run a script with t
 `models/psbt_wasm.py`'s `WasmPSBTParser` gives the PSBT views what embit's `PSBTParser` does, from
 `parser.wasm`'s plan and the signer's review alone; `models/psbt.py` picks it where embit is missing.
 `tests/conftest.py` repeats every successful embit parse in the suite with it and compares what the views
-read: 130 parses agree. `tests/test_flows_psbt_wasm.py` scans, reviews and signs through the views with
+read: 136 parses agree. `tests/test_flows_psbt_wasm.py` scans, reviews and signs through the views with
 both parsers, and `pico/tests/psbt.py` prints the same review and signed PSBT on the Pico 2 as on CPython.
 
 When the signer refuses a PSBT, the views show the upstream error for it: a missing or tampered input UTXO,
 a negative fee, an input this seed does not own, or a malformed OP_RETURN (the signer is started with its
-strict OP_RETURN option, matching upstream's rules). 31 upstream tests expect what the signer does not do
+strict OP_RETURN option, matching upstream's rules). 27 upstream tests expect what the signer does not do
 and are marked xfail in `tests/conftest.py`, each with its reason.
 
 Two differences, both from the signer checking each output itself:
 
 - P2WSH change claimed with this seed's fingerprint is shown as change, but signing is refused until a
   multisig descriptor proves it ("Verify multisig change"). The plan does not carry the output's witness
-  script, so it cannot be checked from the PSBT alone (3 of the 130 parses).
+  script, so it cannot be checked from the PSBT alone (3 of the 136 parses).
 - Inputs of mixed script types are accepted; embit's parser refuses them as "Mixed inputs".
 
 ## Multisig without embit
@@ -230,7 +230,6 @@ expect those stay on CPython.
 
 - **Messages longer than 512 bytes.** SeedSigner has no limit, and one of its test messages is 576.
 - **More of upstream's multisig:** `wsh(multi())`, more than three keys, and nested P2SH-P2WSH.
-- **Segwit v0 inputs without `non_witness_utxo`**, which upstream signs and the signer refuses.
 
 ## Decisions
 
@@ -240,6 +239,8 @@ expect those stay on CPython.
   goes away at the end of stage 1.
 - **The OP_RETURN check is strict**, as upstream's: the signer's option, set at `signer_init`, so other
   hosts may allow what upstream refuses.
+- **SegWit v0 inputs are signed without `non_witness_utxo`**, as upstream signs them: also a `signer_init`
+  option, off by default, since their amounts are then the PSBT's word. One that is given is still checked.
 - **The wordlist is read from `signer.wasm`'s memory**, not copied into Python, which would cost tens
   of KB of heap on the device.
 - **Dice rolls keep SeedSigner's method** (SHA-256 of the roll string), which is also what

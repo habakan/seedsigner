@@ -101,10 +101,12 @@ class Signer:
         if not all(isinstance(a, bytearray) for a in args):
             raise TypeError("secrets are bytearray, so that they can be cleared")
 
-    def init(self, testnet=False, strict_op_return=False):
+    def init(self, testnet=False, strict_op_return=False, prevtx_optional=False):
         """Call once, before anything else. `testnet` also covers signet. `strict_op_return` refuses an OP_RETURN
-        output not made of complete pushes (OP_RETURN), as Bitcoin Core will not relay it."""
-        if not self._e.signer_init((1 if testnet else 0) | (2 if strict_op_return else 0)):
+        output not made of complete pushes (OP_RETURN), as Bitcoin Core will not relay it. `prevtx_optional` signs
+        SegWit v0 inputs without their non_witness_utxo, taking their amounts on the PSBT's word."""
+        flags = (1 if testnet else 0) | (2 if strict_op_return else 0) | (4 if prevtx_optional else 0)
+        if not self._e.signer_init(flags):
             raise RuntimeError("init failed")
         self._reviewed = False
         return self

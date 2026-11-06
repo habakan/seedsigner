@@ -26,7 +26,10 @@ logger = logging.getLogger(__name__)
 PARSER_SHA256 = "d9318981f96de22a8d8976c6e0e1a6fa488bd94b00067b562b481892c2fbbdc7"
 # The Pico assembles UR in Python, so it runs the build without the UR decoder: 42 KB less of WAMR's pool
 PARSER_NO_UR_SHA256 = "a5a9d986f413a07c2f2f2c57b5151da0dfdddb09afbce64d45babb60170d080a"
-SIGNER_SHA256 = "4627150dd3146539fe070f220a17d3c17b9caafb01b48732e6649997edddbe83"
+SIGNER_SHA256 = "b8b27e5f8f3b098d2f6d0704df074996418c46ee6320a67cfecfa8513f9926dc"
+
+# Upstream's rules: OP_RETURN of complete pushes only, and SegWit v0 inputs signed without non_witness_utxo
+SIGNER_OPTIONS = {"strict_op_return": True, "prevtx_optional": True}
 
 OWNER_EXTERNAL, OWNER_CHANGE, OWNER_SELF = 0, 1, 2
 
@@ -87,9 +90,9 @@ def _load_signer() -> Signer:
     global _signer
     if _signer is None:
         if sys.implementation.name == "micropython":
-            _signer = _NativeSigner().init(strict_op_return=True)
+            _signer = _NativeSigner().init(**SIGNER_OPTIONS)
         else:
-            _signer = Signer(_read("signer.wasm"), sha256=SIGNER_SHA256).init(strict_op_return=True)
+            _signer = Signer(_read("signer.wasm"), sha256=SIGNER_SHA256).init(**SIGNER_OPTIONS)
     return _signer
 
 
@@ -108,7 +111,7 @@ def use(seed, network: str = None) -> Signer:
     if network is not None:
         _registered = None
         # Strict OP_RETURN, as SeedSigner refuses one Bitcoin Core will not relay
-        S.init(testnet=network != SettingsConstants.MAINNET, strict_op_return=True)
+        S.init(testnet=network != SettingsConstants.MAINNET, **SIGNER_OPTIONS)
     return S
 
 
@@ -130,7 +133,7 @@ def watch_multisig(network: str, descriptor: str) -> dict:
         return _registered[3]
     S = _load_signer()
     _registered = None
-    S.init(testnet=network != SettingsConstants.MAINNET, strict_op_return=True)
+    S.init(testnet=network != SettingsConstants.MAINNET, **SIGNER_OPTIONS)
     _registered = (None, network, descriptor, S.multisig_watch(descriptor))
     return _registered[3]
 
