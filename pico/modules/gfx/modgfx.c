@@ -55,7 +55,7 @@ static void cmd(uint8_t c, const uint8_t *data, unsigned int n) {
 /* bitwasm-signer-pico a6a5b91's st7789_init: CS tied low (so SPI mode 3), IPS inverted. With CS low, noise on
  * SCK while the Pico resets shifts the LCD's bit count until it is reset too, which RES now does */
 static void lcd_init(void) {
-    static const uint8_t colmod = 0x55, madctl = 0x00;
+    static const uint8_t colmod = 0x55, madctl = LCD_FLIP ? 0xd0 : 0x00; /* MY|MX, and ML so the refresh runs the way rows are written */
     gpio_init(PIN_LCD_RES);
     gpio_set_dir(PIN_LCD_RES, GPIO_OUT);
     gpio_put(PIN_LCD_RES, 0);
@@ -106,7 +106,10 @@ static mp_obj_t gfx_show(size_t n_args, const mp_obj_t *args) {
     int x1 = n_args > 2 ? clampi(mp_obj_get_int(args[2]), 0, W) : W;
     int y1 = n_args > 3 ? CLIP_Y(args[3]) : BAND_Y1;
     if (x1 <= x0 || y1 <= y0) return mp_const_none;
-    uint8_t caset[4] = {0, (uint8_t)x0, 0, (uint8_t)(x1 - 1)}, raset[4] = {0, (uint8_t)y0, 0, (uint8_t)(y1 - 1)};
+    /* flipped, the 240 visible rows are the last of the controller's 320 */
+    int r0 = y0 + (LCD_FLIP ? 80 : 0), r1 = y1 - 1 + (LCD_FLIP ? 80 : 0);
+    uint8_t caset[4] = {0, (uint8_t)x0, 0, (uint8_t)(x1 - 1)};
+    uint8_t raset[4] = {(uint8_t)(r0 >> 8), (uint8_t)r0, (uint8_t)(r1 >> 8), (uint8_t)r1};
     cmd(0x2a, caset, 4);
     cmd(0x2b, raset, 4);
     cmd(0x2c, NULL, 0);

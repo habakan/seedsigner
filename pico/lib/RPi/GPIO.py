@@ -9,11 +9,11 @@ LOW, HIGH = 0, 1
 RPI_INFO = {"P1_REVISION": 3}
 
 BOARD_TO_GP = {
-    31: 13,  # KEY_UP
-    35: 17,  # KEY_DOWN, the current build's NEXT
-    29: 20,  # KEY_LEFT
-    37: 22,  # KEY_RIGHT
-    33: 26,  # KEY_PRESS, the current build's SELECT
+    31: 20,  # KEY_UP; the joystick sits turned 90 degrees, so its A-D outputs rotate one place
+    35: 22,  # KEY_DOWN
+    29: 17,  # KEY_LEFT
+    37: 13,  # KEY_RIGHT
+    33: 26,  # KEY_PRESS
     40: 27,  # KEY1
     38: 28,  # KEY2
     36: 1,   # KEY3

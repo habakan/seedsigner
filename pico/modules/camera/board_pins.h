@@ -15,12 +15,13 @@
 
 #define PIN_LCD_DC 16
 #define PIN_LCD_SCK 18  /* SPI0 SCK */
+#define LCD_FLIP 1 /* the panel mounted upside down, GND pin towards the Pico's USB end */
 #define PIN_LCD_MOSI 19 /* SPI0 TX; CS is tied to ground, BLK to 3V3 */
 
-#define PIN_JOY_UP 13
-#define PIN_JOY_DOWN 17
-#define PIN_JOY_LEFT 20
-#define PIN_JOY_RIGHT 22
+#define PIN_JOY_UP 20
+#define PIN_JOY_DOWN 22
+#define PIN_JOY_LEFT 17
+#define PIN_JOY_RIGHT 13
 #define PIN_JOY_PUSH 26
 #define PIN_BTN_A 27
 #define PIN_BTN_B 28
