@@ -42,8 +42,18 @@ def test_policy_and_addresses_as_embit():
             assert wallet.multisig_address(m, i, change, NET) == want
 
 
-def test_a_seed_outside_the_wallet_does_not_register():
-    assert not wallet.Multisig(DESC).register([Seed(("abandon " * 11 + "about").split())], NET)
+def test_watched_without_a_seed_of_ours():
+    d = Descriptor.from_string(DESC)
+    for seeds in ([], [Seed(("abandon " * 11 + "about").split())]):
+        m = wallet.Multisig(DESC)
+        assert m.register(seeds, NET) and m.seed is None and m.info["ours"] == 255
+        assert wallet.multisig_policy(m) == wallet.multisig_policy(d)
+        assert wallet.multisig_address(m, 2, True, NET) == embit_utils.get_multisig_address(
+            d, index=2, is_change=True, embit_network="regtest")
+
+
+def test_an_unreadable_descriptor_does_not_register():
+    assert not wallet.Multisig("wsh(pk(nothing))").register([PSBTTestData.seed], NET)
 
 
 def change_psbt():

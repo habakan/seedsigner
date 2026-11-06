@@ -7,7 +7,7 @@ PSBTParser._check_with_bitwasm for what has to agree.
 
 Seeds are derived inside signer.wasm. It holds one key at a time: the seed last passed to use().
 
-The modules are bitwasm-signer 3824f28's build/parser.wasm and build/signer.wasm, pinned
+The modules are bitwasm-signer c36c24c's build/parser.wasm and build/signer.wasm, pinned
 by hash. libiwasm (WAMR 2.4.5, classic interpreter) comes from the OS image. On MicroPython the
 signer is the same C linked into the firmware, which the Pico could not afford to interpret.
 """
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 PARSER_SHA256 = "d9318981f96de22a8d8976c6e0e1a6fa488bd94b00067b562b481892c2fbbdc7"
 # The Pico assembles UR in Python, so it runs the build without the UR decoder: 42 KB less of WAMR's pool
 PARSER_NO_UR_SHA256 = "a5a9d986f413a07c2f2f2c57b5151da0dfdddb09afbce64d45babb60170d080a"
-SIGNER_SHA256 = "3a6362db0d7f588db9f4d725132f67dc35d01a2b7129a767551baee70d8bd181"
+SIGNER_SHA256 = "e0bfe7d7a9409ee698c3fc49228b7abb6df6d4c70dcdc9bd9eb115912490a473"
 
 OWNER_EXTERNAL, OWNER_CHANGE, OWNER_SELF = 0, 1, 2
 
@@ -120,6 +120,18 @@ def use_multisig(seed, network: str, descriptor: str) -> dict:
         return _registered[3]
     S = use(seed, network)
     _registered = (seed, network, descriptor, S.multisig_load(descriptor))
+    return _registered[3]
+
+
+def watch_multisig(network: str, descriptor: str) -> dict:
+    """Registers `descriptor` for its addresses alone, needing no seed of ours, as use_multisig() does for signing."""
+    global _registered
+    if _registered and _registered[0] is None and _registered[1:3] == (network, descriptor):
+        return _registered[3]
+    S = _load_signer()
+    _registered = None
+    S.init(testnet=network != SettingsConstants.MAINNET, strict_op_return=True)
+    _registered = (None, network, descriptor, S.multisig_watch(descriptor))
     return _registered[3]
 
 

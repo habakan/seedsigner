@@ -50,6 +50,7 @@ int signer_message_review(unsigned int, unsigned int, unsigned int, unsigned int
 int signer_message_sign(void);
 int signer_multisig_load(unsigned int);
 int signer_multisig_load_cbor(unsigned int);
+int signer_multisig_watch(unsigned int);
 void signer_multisig_unload(void);
 int signer_multisig_address(unsigned int, unsigned int);
 int signer_multisig_find_address(unsigned int, unsigned int);
@@ -330,6 +331,12 @@ static mp_obj_t w_signer_multisig_load_cbor(size_t n, const mp_obj_t *a) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(w_signer_multisig_load_cbor_obj, 1, 1, w_signer_multisig_load_cbor);
 
+static mp_obj_t w_signer_multisig_watch(size_t n, const mp_obj_t *a) {
+    (void)n;
+    return mp_obj_new_int(signer_multisig_watch((unsigned int)mp_obj_get_int_truncated(a[0])));
+}
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(w_signer_multisig_watch_obj, 1, 1, w_signer_multisig_watch);
+
 static mp_obj_t w_signer_multisig_unload(size_t n, const mp_obj_t *a) {
     (void)n, (void)a;
     signer_multisig_unload();
@@ -441,6 +448,7 @@ static const mp_rom_map_elem_t globals[] = {
     { MP_ROM_QSTR(MP_QSTR_signer_multisig_load), MP_ROM_PTR(&w_signer_multisig_load_obj) },
     { MP_ROM_QSTR(MP_QSTR_signer_multisig_load_cbor), MP_ROM_PTR(&w_signer_multisig_load_cbor_obj) },
     { MP_ROM_QSTR(MP_QSTR_signer_multisig_unload), MP_ROM_PTR(&w_signer_multisig_unload_obj) },
+    { MP_ROM_QSTR(MP_QSTR_signer_multisig_watch), MP_ROM_PTR(&w_signer_multisig_watch_obj) },
     { MP_ROM_QSTR(MP_QSTR_signer_multisig_address), MP_ROM_PTR(&w_signer_multisig_address_obj) },
     { MP_ROM_QSTR(MP_QSTR_signer_multisig_find_address), MP_ROM_PTR(&w_signer_multisig_find_address_obj) },
     { MP_ROM_QSTR(MP_QSTR_signer_account_cbor), MP_ROM_PTR(&w_signer_account_cbor_obj) },

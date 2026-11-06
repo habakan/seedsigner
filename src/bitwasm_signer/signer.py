@@ -328,6 +328,13 @@ class Signer:
 
     def multisig_load(self, text: str | bytes | bytearray):
         """Registers a checked P2WSH wallet and returns what the person must verify."""
+        return self._multisig(text, "signer_multisig_load", "multisigLoad")
+
+    def multisig_watch(self, text: str | bytes | bytearray):
+        """The same wallet with no seed needed, for multisig_address and multisig_find_address alone; ours is 255."""
+        return self._multisig(text, "signer_multisig_watch", "multisigWatch")
+
+    def _multisig(self, text, export, stage):
         if isinstance(text, str):
             raw = text.encode()
         elif isinstance(text, (bytes, bytearray)):
@@ -335,9 +342,9 @@ class Signer:
         else:
             raise TypeError("multisig setup must be text or bytes")
         self._input(raw)
-        rc = self._e.signer_multisig_load(len(raw))
+        rc = getattr(self._e, export)(len(raw))
         if rc != 0:
-            raise SignerError("multisigLoad", rc)
+            raise SignerError(stage, rc)
         at = self._e.signer_multisig_output()
         n = self._m[at + MS_N]
         return {

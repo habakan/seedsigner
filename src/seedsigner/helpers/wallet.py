@@ -325,7 +325,7 @@ def _multipath(descriptor: str) -> str:
 class Multisig:
     """
     A multisig wallet where there is no embit: its descriptor as the signer reads it, and the seed of ours it is
-    registered with, as the signer derives its addresses only from one of its own keys.
+    registered with, or None where it is watched for its addresses alone.
     """
     def __init__(self, descriptor: str):
         self.descriptor = _multipath(descriptor.strip())
@@ -333,18 +333,25 @@ class Multisig:
 
 
     def register(self, seeds, network: str) -> bool:
-        """Registers it with the first of `seeds` it holds a key of; False when none does or the signer cannot read it."""
+        """Registers it with the first of `seeds` it holds a key of, or watches it; False when the signer cannot read it."""
         for seed in seeds:
             try:
                 self.info, self.seed = bitwasm.use_multisig(seed, network, self.descriptor), seed
                 return True
             except bitwasm.SignerError:
                 pass
-        return False
+        try:
+            self.info, self.seed = bitwasm.watch_multisig(network, self.descriptor), None
+            return True
+        except bitwasm.SignerError:
+            return False
 
 
     def address(self, index: int, is_change: bool, network: str) -> str:
-        bitwasm.use_multisig(self.seed, network, self.descriptor)
+        if self.seed is None:
+            bitwasm.watch_multisig(network, self.descriptor)
+        else:
+            bitwasm.use_multisig(self.seed, network, self.descriptor)
         return for_network(bitwasm.signer().multisig_address(int(is_change), index), network)
 
 

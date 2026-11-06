@@ -110,13 +110,12 @@ class ScanView(View):
                 try:
                     from embit.descriptor import Descriptor
                 except ImportError:
-                    # bitwasm-signer reads it, and derives its addresses from one of its keys that a seed here holds
+                    # bitwasm-signer reads it, with a seed here that holds one of its keys or for its addresses alone
                     from seedsigner.helpers.wallet import Multisig
                     descriptor = Multisig(descriptor_str)
                     seeds = [s for s in [self.controller.psbt_seed] + self.controller.storage.seeds if s]
                     if not descriptor.register(seeds, self.settings.get_value(SettingsConstants.SETTING__NETWORK)):
-                        return Destination(NotYetImplementedView, view_args=dict(
-                            text=_("Load a seed that is in this multisig first")))
+                        return Destination(NotYetImplementedView)
                     self.controller.multisig_wallet_descriptor = descriptor
                     return Destination(MultisigWalletDescriptorView, skip_current_view=True)
 
