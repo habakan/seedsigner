@@ -78,14 +78,32 @@ make -C pico mpy && make -C pico device-smoke PORT=...  # or run a script with t
 `models/psbt_wasm.py`'s `WasmPSBTParser` gives the PSBT views what embit's `PSBTParser` does, from
 `parser.wasm`'s plan and the signer's review alone; `models/psbt.py` picks it where embit is missing.
 `tests/conftest.py` repeats every successful embit parse in the suite with it and compares what the views
-read: 118 parses agree. `tests/test_flows_psbt_wasm.py` scans, reviews and signs through the views with
+read: 130 parses agree. `tests/test_flows_psbt_wasm.py` scans, reviews and signs through the views with
 both parsers, and `pico/tests/psbt.py` prints the same review and signed PSBT on the Pico 2 as on CPython.
+
+When the signer refuses a PSBT, the views show the upstream error for it: a missing or tampered input UTXO,
+a negative fee, an input this seed does not own, or a malformed OP_RETURN (the signer is started with its
+strict OP_RETURN option, matching upstream's rules). 31 upstream tests expect what the signer does not do
+and are marked xfail in `tests/conftest.py`, each with its reason.
 
 Two differences, both from the signer checking each output itself:
 
-- P2WSH change without a registered multisig descriptor is an external spend, where embit presumes it
-  change from the psbt's claims (37 of the 118 parses, where the change fields are not compared).
+- P2WSH change claimed with this seed's fingerprint is shown as change, but signing is refused until a
+  multisig descriptor proves it ("Verify multisig change"). The plan does not carry the output's witness
+  script, so it cannot be checked from the PSBT alone (3 of the 130 parses).
 - Inputs of mixed script types are accepted; embit's parser refuses them as "Mixed inputs".
+
+## Multisig without embit
+
+`helpers/wallet.py`'s `Multisig` takes a `wsh(sortedmulti(...))` descriptor of up to three keys, normalized
+to `/<0;1>/*`. With a loaded seed among the cosigners it is registered with the signer, which then proves
+change outputs and signs. With no such seed it is only watched: addresses, but no review. The address
+explorer and address verification use it either way, as upstream does from a descriptor alone.
+
+| On the Pico 2, a 2-of-3 | with a seed | watched |
+|---|---:|---:|
+| explorer page of ten addresses | 1.0 s | 1.0 s |
+| verify receive #3 / change #1 | 0.9 s / 0.7 s | 1.2 s / 0.6 s |
 
 The signed PSBT is what `parser_finalize` writes, untrimmed: the Pico has no embit to trim it with.
 
@@ -123,6 +141,10 @@ ends the parser's instance; `helpers/bitwasm.py` starts a new one on the next PS
 Pointed at a laptop screen cycling bitwasm-signer's `own_p2wpkh_2in_nwu` as 21 UR frames (v5, 0.4 s
 each), it completed in 42 s, reading 40 of 108 frames (0.39 s a frame), and signed it into the bytes
 CPython does. Synthetic frames read in 0.33 s (SeedQR) and 0.44 s (UR, v11).
+
+Through SeedSigner's own scan screen, with the camera preview drawn between reads, the same 21-frame UR
+took 15 s and 33 s from pressing Scan to the signer selection; how long depends on which fountain parts
+are caught.
 
 ## The screen
 
@@ -173,6 +195,10 @@ RAM decided most of the way there:
 | parser.wasm built without its UR decoder (bitwasm-signer), pool 116 KB | 275 |
 | its stack 4 KB (1.7 KB used at most), pool 104 KB; C stack 20 KB, core1's 16 KB | 262 |
 
+Now the GC heap is about 259 KB beside 215 KB of static RAM. About 137 KB of it is free on the main menu,
+100 KB while scanning and 80 KB on the PSBT overview. The firmware, SeedSigner frozen in, is 1.75 MB of
+its 3 MB of flash; 1 MB is left for the filesystem.
+
 - The canvas is a list of drawing operations; an opaque one drops what it hides, or a keyboard's redraws
   pile up. A View's finished Screen is let go, or the back stack holds one per seed word.
 - Buffers the heap may not find late are static or taken at import: WAMR's module copy, the plan.
@@ -197,12 +223,14 @@ spend confirmed (txid d640897e4ff1fa4f75853dd2c89e4f6bcfebd1706fe8411d5386965c4e
 ## What the Pico build gives up
 
 Whatever `signer.wasm` does not do: Electrum seeds, non-English wordlists, legacy P2PKH, custom
-derivation paths, and multisig beyond three keys. The tests that expect those stay on CPython.
+derivation paths, and multisig other than `wsh(sortedmulti())` of up to three keys. The tests that
+expect those stay on CPython.
 
 ## Needed from bitwasm-signer
 
-- **An address at a given index.** `signer_find_address` searches; the address explorer lists.
 - **Messages longer than 512 bytes.** SeedSigner has no limit, and one of its test messages is 576.
+- **More of upstream's multisig:** `wsh(multi())`, more than three keys, and nested P2SH-P2WSH.
+- **Segwit v0 inputs without `non_witness_utxo`**, which upstream signs and the signer refuses.
 
 ## Decisions
 
@@ -210,6 +238,8 @@ derivation paths, and multisig beyond three keys. The tests that expect those st
   key stays loaded while the seed is in `SeedStorage`; choosing another seed re-runs PBKDF2.
   `Seed.seed_bytes` remains only as a CPython-side property for the embit callers not yet moved, and
   goes away at the end of stage 1.
+- **The OP_RETURN check is strict**, as upstream's: the signer's option, set at `signer_init`, so other
+  hosts may allow what upstream refuses.
 - **The wordlist is read from `signer.wasm`'s memory**, not copied into Python, which would cost tens
   of KB of heap on the device.
 - **Dice rolls keep SeedSigner's method** (SHA-256 of the roll string), which is also what
