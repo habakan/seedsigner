@@ -413,9 +413,17 @@ static mp_obj_t memory(void) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_0(memory_obj, memory);
 
+/* prevtx_buf alone: memory()'s offsets reach past what a MicroPython memoryview can start at, and the Pico
+ * keeps a scanned PSBT here (pico_boot.py). 32768 is wasm_main.c's PREVTX_MAX */
+static mp_obj_t prevtx_buffer(void) {
+    return mp_obj_new_bytearray_by_ref(32768, (void *)signer_prevtx());
+}
+static MP_DEFINE_CONST_FUN_OBJ_0(prevtx_buffer_obj, prevtx_buffer);
+
 static const mp_rom_map_elem_t globals[] = {
     { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR__bitwasm) },
     { MP_ROM_QSTR(MP_QSTR_memory), MP_ROM_PTR(&memory_obj) },
+    { MP_ROM_QSTR(MP_QSTR_prevtx_buffer), MP_ROM_PTR(&prevtx_buffer_obj) },
     { MP_ROM_QSTR(MP_QSTR_signer_input), MP_ROM_PTR(&w_signer_input_obj) },
     { MP_ROM_QSTR(MP_QSTR_signer_input_cap), MP_ROM_PTR(&w_signer_input_cap_obj) },
     { MP_ROM_QSTR(MP_QSTR_signer_plan), MP_ROM_PTR(&w_signer_plan_obj) },

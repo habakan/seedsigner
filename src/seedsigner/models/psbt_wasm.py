@@ -73,7 +73,9 @@ class WasmPSBTParser:
 
     def __init__(self, p, seed, network: str = SettingsConstants.MAINNET, psbt_bytes: bytes = None, multisig_descriptor=None):
         # `p` is embit's PSBT where there is one; the bytes are what the modules read
-        self.psbt_bytes = bytes(psbt_bytes) if psbt_bytes is not None else (p if isinstance(p, (bytes, bytearray)) else p.serialize())
+        if psbt_bytes is None and not isinstance(p, (bytes, bytearray)) and not hasattr(p, "chunks"):
+            psbt_bytes = p.serialize()
+        self.psbt_bytes = P.as_psbt(psbt_bytes if psbt_bytes is not None else p)
         self.seed = seed
         self.network = network
         self.multisig_descriptor = multisig_descriptor
@@ -194,8 +196,8 @@ class WasmPSBTParser:
 
     @staticmethod
     def has_matching_input_fingerprint(psbt, seed, network: str = SettingsConstants.MAINNET) -> bool:
-        raw = psbt if isinstance(psbt, (bytes, bytearray)) else psbt.serialize()
-        return P.plan_fingerprints(bytes(raw), int(seed.get_fingerprint(network), 16))
+        raw = psbt if isinstance(psbt, (bytes, bytearray)) or hasattr(psbt, "chunks") else psbt.serialize()
+        return P.plan_fingerprints(raw, int(seed.get_fingerprint(network), 16))
 
 
     def has_high_fee(self) -> bool:

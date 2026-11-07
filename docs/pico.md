@@ -105,7 +105,8 @@ explorer and address verification use it either way, as upstream does from a des
 | explorer page of ten addresses | 1.0 s | 1.0 s |
 | verify receive #3 / change #1 | 0.9 s / 0.7 s | 1.2 s / 0.6 s |
 
-The signed PSBT is what `parser_finalize` writes, untrimmed: the Pico has no embit to trim it with.
+The signed PSBT is what `parser_finalize_trimmed` writes: the unsigned transaction and the signatures, as
+`PSBTParser.trim` leaves it, without embit. Previous transactions would otherwise make it tens of KB.
 
 ## Reading QR codes
 

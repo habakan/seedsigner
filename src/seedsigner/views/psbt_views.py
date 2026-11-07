@@ -981,7 +981,7 @@ class PSBTFinalizeView(View):
             return Destination(BackStackView)
 
         elif isinstance(psbt_parser, WasmPSBTParser):
-            # No embit to trim with: the QR carries the PSBT as parser.wasm wrote it
+            # parser.wasm trims it as PSBTParser.trim does, without embit
             from seedsigner.helpers.bitwasm import BitwasmError
             try:
                 self.controller.psbt = psbt_parser.bitwasm_review.sign()

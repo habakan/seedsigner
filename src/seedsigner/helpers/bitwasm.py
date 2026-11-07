@@ -23,9 +23,9 @@ from seedsigner.models.settings import SettingsConstants
 
 logger = logging.getLogger(__name__)
 
-PARSER_SHA256 = "d9318981f96de22a8d8976c6e0e1a6fa488bd94b00067b562b481892c2fbbdc7"
+PARSER_SHA256 = "cf79ee83307e77b7cbe468d4b43f838ef7e8602e8ee2d29d9bf82001f1553ccf"
 # The Pico assembles UR in Python, so it runs the build without the UR decoder: 42 KB less of WAMR's pool
-PARSER_NO_UR_SHA256 = "a5a9d986f413a07c2f2f2c57b5151da0dfdddb09afbce64d45babb60170d080a"
+PARSER_NO_UR_SHA256 = "5e02223cfba08af5f4bdde33c78f15b4782cd9e257f285ec4e1b6e2b20daa90a"
 SIGNER_SHA256 = "13d0c3b1529faa634b106f7cfb904310a1c4d91eac2e418b0883a52e0927ccbd"
 
 # Upstream's rules: OP_RETURN of complete pushes only, and SegWit v0 inputs signed without non_witness_utxo
@@ -139,13 +139,24 @@ def watch_multisig(network: str, descriptor: str) -> dict:
 
 
 
+def as_psbt(data):
+    """A bytearray, or the Pico's scanned PSBT in pieces (chunks()), as it is; anything else as bytes."""
+    return data if isinstance(data, bytearray) or hasattr(data, "chunks") else bytes(data)
+
+
+def _put_psbt(P, psbt):
+    at = P.parser_input()
+    for c in psbt.chunks() if hasattr(psbt, "chunks") else (psbt,):
+        P.memory[at:at + len(c)] = c
+        at += len(c)
+
+
 def plan_fingerprints(psbt_bytes: bytes, fingerprint: int) -> bool:
     """Whether parser.wasm finds any input claiming `fingerprint`: a routing hint, as in SeedSigner."""
     P = _load_parser()
     if len(psbt_bytes) > P.parser_input_cap():
         return False
-    at = P.parser_input()
-    P.memory[at:at + len(psbt_bytes)] = psbt_bytes
+    _put_psbt(P, psbt_bytes)
     if P.parser_parse(len(psbt_bytes), fingerprint) != 0:
         return False
     plan = P.parser_plan()
@@ -232,8 +243,12 @@ class BitwasmReview:
     sign() parses and reviews the same bytes again and refuses unless the display is
     unchanged, so what was compared with the screens is what gets signed.
     """
+    # What sign() returns the PSBT in; the Pico's pico_boot puts it where the UR encoder reads it
+    signed_out = bytes
+
     def __init__(self, psbt_bytes: bytes, seed, network: str, multisig_descriptor: str | None = None):
-        self.psbt_bytes = bytes(psbt_bytes)
+        # Not copied: sign() reviews it again and refuses if it changed
+        self.psbt_bytes = as_psbt(psbt_bytes)
         self.seed = seed
         self.network = network
         self.multisig_descriptor = multisig_descriptor
@@ -258,18 +273,14 @@ class BitwasmReview:
         if len(self.psbt_bytes) > P.parser_input_cap():
             raise BitwasmError("PSBT too large")
         at = P.parser_input()
-        P.memory[at:at + len(self.psbt_bytes)] = self.psbt_bytes
+        _put_psbt(P, self.psbt_bytes)
         rc = P.parser_parse(len(self.psbt_bytes), int(S.fingerprint, 16))
         if rc != 0:
             raise BitwasmError(f"parser: {P_ERRORS.get(rc, rc)}")
 
         _plan[:] = memoryview(P.memory)[P.parser_plan():P.parser_plan() + PLAN_SIZE]  # no slice copy
         self.plan = plan = _plan
-        prevtxs = []
-        for i in range(plan[PLAN_N_INPUTS]):
-            n, off = P.parser_prevtx_len(i), at + P.parser_prevtx_off(i)
-            prevtxs.append(bytes(memoryview(P.memory)[off:off + n]) if n else None)
-        S.set_plan(plan).set_prevtxs(prevtxs)
+        self.put_prevtxs(S.set_plan(plan), P, at)
         try:
             self.review = S.review()
             return S.display()
@@ -277,8 +288,18 @@ class BitwasmReview:
             raise BitwasmError(str(e)) from e
 
 
+    def put_prevtxs(self, S, P, at):
+        """Each input's non_witness_utxo to the signer, from the parser's copy of the PSBT at `at`."""
+        prevtxs = []
+        for i in range(self.plan[PLAN_N_INPUTS]):
+            n, off = P.parser_prevtx_len(i), at + P.parser_prevtx_off(i)
+            # A view, not a copy: an exchange's batch payout alone can be tens of KB
+            prevtxs.append(memoryview(P.memory)[off:off + n] if n else None)
+        S.set_prevtxs(prevtxs)
+
+
     def sign(self) -> bytes:
-        """The signed psbt as parser.wasm writes it."""
+        """The signed psbt trimmed, as upstream trims: the unsigned transaction and the signatures."""
         if self.unverified_change:
             raise BitwasmError("multisig change not verified against its descriptor")
         P = _load_parser()
@@ -297,7 +318,7 @@ class BitwasmReview:
             P.memory[base + i * SIG_SIZE:base + (i + 1) * SIG_SIZE] = sig["raw"]
             if sig["point"]:
                 P.memory[points + i * NONCE_SIZE:points + (i + 1) * NONCE_SIZE] = sig["point"]
-        n = P.parser_finalize(len(sigs))
+        n = P.parser_finalize_trimmed(len(sigs))
         if n < 0:
             raise BitwasmError(f"parser: {P_ERRORS.get(-n, -n)}")
-        return bytes(memoryview(P.memory)[P.parser_output():P.parser_output() + n])
+        return self.signed_out(memoryview(P.memory)[P.parser_output():P.parser_output() + n])
