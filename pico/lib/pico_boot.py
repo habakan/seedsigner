@@ -497,3 +497,33 @@ def _pulses(self):
 
 
 PSBTOverviewScreen.TxExplorerAnimationThread.run = _pulses
+
+from seedsigner.hardware.camera import Camera
+from seedsigner.views.tools_views import ToolsImageEntropyMnemonicLengthView
+import seedsigner.gui.screens.tools_screens as _tools_screens
+
+
+class _RecentHashes(list):
+    # The entropy preview's repeated-frame check, against the last 64 frames: upstream's set takes every frame shown
+    # until the button press, and outgrew the heap within a minute of the pool filling
+    def add(self, h):
+        if len(self) == 64:
+            self.pop(0)
+        self.append(h)
+
+
+_tools_screens.set = _RecentHashes  # the module's only set()
+
+_mnemonic_length_run = ToolsImageEntropyMnemonicLengthView.run
+
+
+def _wiping_final_image(self):
+    # The final image is shown from the camera's memory, which stays borrowed until the words are made of it
+    try:
+        return _mnemonic_length_run(self)
+    finally:
+        if not self.controller.image_entropy_final_image:
+            Camera.get_instance().release()
+
+
+ToolsImageEntropyMnemonicLengthView.run = _wiping_final_image

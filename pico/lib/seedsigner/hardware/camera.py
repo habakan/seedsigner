@@ -1,6 +1,7 @@
 """SeedSigner's Camera on the Pico: _camera captures and reads a QR code in C, so a "frame" from
 read_video_stream() is the code's bytes, or NO_CODE, which DecodeQR takes as they are (pico/lib/pico_boot.py)."""
 import _camera
+import hashlib
 from PIL import Image
 
 
@@ -14,6 +15,25 @@ _inject_mid = False
 
 class CameraConnectionError(Exception):
     pass
+
+
+_CAM_OPS, _CAM_BOXES = [("cam", None, 240, 240)], [(0, 0, 239, 239)]
+
+
+class _Frame(Image.Image):
+    """A frame captured for a seed's image entropy: drawn from the camera's memory, with its pixels' hash for
+    tobytes() and their range for getextrema(), so 50 of them fit the heap. Valid until the camera closes."""
+    def __init__(self):
+        # Image's own lists shared, never added to: a frame is only pasted, which copies them
+        self.mode, self.size, self.ops, self.boxes, self.dirty = "RGB", (240, 240), _CAM_OPS, _CAM_BOXES, None
+        self._digest = hashlib.sha256(_camera.frame()).digest()
+        self._range = _camera.stats()[:2]
+
+    def tobytes(self, *args):
+        return self._digest
+
+    def getextrema(self):
+        return (self._range,) * 3
 
 
 class Camera:
@@ -31,7 +51,7 @@ class Camera:
             _camera.open()  # borrows WAMR's pool, ending parser.wasm's instance until the next parse
         except OSError:
             raise CameraConnectionError()
-        self._video_stream, self._animated = True, False
+        self._video_stream, self._animated, self._read = True, False, False
         global _inject
         from RPi import GPIO
         if GPIO.serial_keys and _inject is None:
@@ -46,10 +66,18 @@ class Camera:
         if not self._video_stream:
             raise Exception("Must call start_video_stream first.")
         if as_image:
+            if not self._read:  # no read() between: the entropy preview, which reads no code, so a new frame
+                try:
+                    _camera.capture()
+                except OSError:
+                    raise CameraConnectionError()
+                return _Frame()
             # The last frame read, which _gfx draws from the camera's memory: no pixels are copied
+            self._read = False
             frame = Image.Image("RGB", (240, 240), None)
             frame.add(("cam", None, 240, 240))
             return frame
+        self._read = True
         try:
             data = _camera.read(2 if self._animated else 0)  # 2: the reader's budget for animated parts
         except OSError:
@@ -76,3 +104,24 @@ class Camera:
         if self._video_stream:
             _camera.close()
             self._video_stream = None
+
+    def start_single_frame_mode(self, resolution=None):
+        try:
+            _camera.open()
+        except OSError:
+            raise CameraConnectionError()
+
+    def capture_frame(self):
+        try:
+            _camera.capture()
+        except OSError:
+            raise CameraConnectionError()
+        return _Frame()
+
+    def stop_single_frame_mode(self):
+        pass  # the frame is shown from the camera's memory after this; release() wipes it
+
+    def release(self):
+        """Wipes the last frame and returns the pool, once a seed's final image has been used."""
+        self._video_stream = None
+        _camera.close()

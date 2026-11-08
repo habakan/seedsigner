@@ -89,8 +89,7 @@ static mp_obj_t decode_frame(mp_int_t kind) {
     return n == 0 ? mp_const_none : mp_obj_new_int(n);
 }
 
-/* read(kind=0): captures a frame and reads it. kind 0 any, 1 SeedQR, 2 animated */
-static mp_obj_t camera_read(size_t n_args, const mp_obj_t *args) {
+static void capture(void) {
     need_open();
     if (!camera_up) {
         /* XCLK and SCCB first: an I2C block still in reset faults the CPU on its first write */
@@ -100,9 +99,29 @@ static mp_obj_t camera_read(size_t n_args, const mp_obj_t *args) {
     }
     if (!camera_capture(memory, 1000)) mp_raise_OSError(MP_ETIMEDOUT);
     framed = true;
+}
+
+/* read(kind=0): captures a frame and reads it. kind 0 any, 1 SeedQR, 2 animated */
+static mp_obj_t camera_read(size_t n_args, const mp_obj_t *args) {
+    capture();
     return decode_frame(n_args ? mp_obj_get_int(args[0]) : 0);
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(camera_read_obj, 0, 1, camera_read);
+
+/* capture(): a frame and no reading, for a seed's image entropy */
+static mp_obj_t camera_capture_only(void) {
+    capture();
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_0(camera_capture_obj, camera_capture_only);
+
+/* frame(): the last frame's 320x240 greys as a memoryview of the camera's memory, valid until close() */
+static mp_obj_t camera_frame_view(void) {
+    need_open();
+    if (!framed) return mp_const_none;
+    return mp_obj_new_memoryview('B', FRAME_SIZE, memory);
+}
+static MP_DEFINE_CONST_FUN_OBJ_0(camera_frame_obj, camera_frame_view);
 
 /* decode(image, kind=0): reads a 320x240 greyscale image given as bytes, for testing without a sensor */
 static mp_obj_t camera_decode(size_t n_args, const mp_obj_t *args) {
@@ -134,6 +153,8 @@ static const mp_rom_map_elem_t globals[] = {
     { MP_ROM_QSTR(MP_QSTR_close), MP_ROM_PTR(&camera_close_obj) },
     { MP_ROM_QSTR(MP_QSTR_probe), MP_ROM_PTR(&camera_probe_obj) },
     { MP_ROM_QSTR(MP_QSTR_read), MP_ROM_PTR(&camera_read_obj) },
+    { MP_ROM_QSTR(MP_QSTR_capture), MP_ROM_PTR(&camera_capture_obj) },
+    { MP_ROM_QSTR(MP_QSTR_frame), MP_ROM_PTR(&camera_frame_obj) },
     { MP_ROM_QSTR(MP_QSTR_decode), MP_ROM_PTR(&camera_decode_obj) },
     { MP_ROM_QSTR(MP_QSTR_stats), MP_ROM_PTR(&camera_stats_obj) },
     { MP_ROM_QSTR(MP_QSTR_WIDTH), MP_ROM_INT(CAMERA_W) },
