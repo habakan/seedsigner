@@ -80,7 +80,20 @@ def fork_signed(raw):
     return bytes(WasmPSBTParser(raw, seed, SettingsConstants.MAINNET).bitwasm_review.sign())
 
 
-def run(port, name, raw, reset):
+def screen_qr(shot, secs=300):
+    """The signed PSBT off the screen's animated QR, from screenshots until its UR decodes."""
+    from PIL import Image
+    from pyzbar.pyzbar import decode
+    from seedsigner.helpers.ur2.ur_decoder import URDecoder
+    from urtypes.crypto import PSBT
+    dec, end = URDecoder(), time.time() + secs
+    while not dec.is_complete() and time.time() < end:
+        for d in decode(Image.open(shot()).convert("L").resize((960, 960), Image.NEAREST)):
+            dec.receive_part(d.data.decode().lower())
+    return PSBT.from_cbor(dec.result_message().cbor).data if dec.is_complete() else None
+
+
+def run(port, name, raw, reset, network=None, from_screen=False):
     lines = frames(raw)
     text = "\n".join(lines + ["---", SEEDQR, "---"]) + "\n"
     if reset:
@@ -88,6 +101,9 @@ def run(port, name, raw, reset):
         time.sleep(25)  # main.py's boot: the raw REPL needs it running
     if put(port, "qr_inject.txt", text) != str(len(text)):
         sys.exit("qr_inject.txt did not reach the device")
+    conf = json.dumps({"network": network} if network else {})  # read as main.py starts
+    if put(port, "settings.json", conf) != str(len(conf)):
+        sys.exit("settings.json did not reach the device")
     log = OUT / f"{name}.log"
     log.write_bytes(b"")
     serve = subprocess.Popen(DRIVE + ["serve", port, SOCK, str(log)], cwd=R, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -127,6 +143,8 @@ def run(port, name, raw, reset):
             # the signed QR: the screenshot's dark greys and almost nothing brighter
             if bad or (share(png, lambda r, g, b: r + g + b >= 192) < 0.01 and share(png, lambda r, g, b: r + g + b >= 96) > 0.2):
                 break
+        if from_screen:
+            return screen_qr(lambda: step("", "qr", 0)[0])
         (OUT / "signed.py").write_text(SIGNED)
         out = subprocess.run(DRIVE + ["exec", SOCK, str(OUT / "signed.py"), "8"], cwd=R, capture_output=True, text=True).stdout
     finally:
