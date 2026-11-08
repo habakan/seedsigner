@@ -20,7 +20,9 @@ SEEDQR = "0000" * 11 + "0003"  # abandon x11 about, Standard SeedQR
 SIGNED = """import binascii
 from seedsigner.controller import Controller
 p = Controller.get_instance().psbt
-print("B64", binascii.b2a_base64(p if isinstance(p, (bytes, bytearray, memoryview)) else p.serialize(), newline=False).decode())
+p = memoryview(p if isinstance(p, (bytes, bytearray, memoryview)) else p.serialize())
+for i in range(0, len(p), 570):  # a few hundred bytes at a time: the heap has no hole for all of a 2.5 KB PSBT in base64
+    print("B64", binascii.b2a_base64(p[i:i + 570], newline=False).decode())
 """
 
 
@@ -150,7 +152,7 @@ def run(port, name, raw, reset, network=None, from_screen=False):
     finally:
         serve.terminate()
     m = re.findall(r"^B64 (\S+)", out, re.M)
-    return base64.b64decode(m[-1]) if m else None
+    return base64.b64decode("".join(m)) if m else None
 
 
 if __name__ == "__main__":
