@@ -267,6 +267,14 @@ def _validate_part(self, p):
         self.by_index = [None] * n  # each pure part's data, in order
         self.received_part_indexes, self.simple_parts, self.mixed_parts = _Bits(n), _Slots(n), _Slots(n)
         _degree_sampler(n)
+        self.static = None
+        if getattr(self, "to_static", False) and n * self.expected_fragment_len <= PREVTX_MAX:
+            # A PSBT's pure parts go to the signer's prevtx buffer as they come: 250 of them for 25 KB, kept in
+            # the heap until the last, were what cut it up. One read before is let go, being written over
+            self.static = _prevtx_buffer()
+            c = controller.Controller.get_instance()
+            if getattr(c.psbt_bytes, "static_off", None) is not None:
+                c.psbt = c.psbt_bytes = c.psbt_parser = None
         return True
     return (self.expected_part_count() == p.seq_len and self.expected_message_len == p.message_len
             and self.expected_checksum == p.checksum and self.expected_fragment_len == len(p.data))
@@ -291,6 +299,11 @@ def _process_simple_part(self, p):
     i = p.index()
     if i in self.received_part_indexes:
         return
+    if self.static is not None:
+        fl = self.expected_fragment_len
+        view = memoryview(self.static)[i * fl:(i + 1) * fl]
+        view[:] = p.data
+        p.data = view
     self.simple_parts[p.indexes] = p
     self.received_part_indexes.add(i)
     self.by_index[i] = p.data
@@ -301,6 +314,8 @@ def _process_simple_part(self, p):
         crc = crc32(memoryview(data)[:min(fl, total - k * fl)], crc)
     if crc & 0xFFFFFFFF != self.expected_checksum:
         self.result = InvalidChecksum()
+    elif self.static is not None:
+        self.result = _Pieces([memoryview(self.static)[:total]], 0, total, 0)
     elif getattr(self, "to_static", False) and total <= PREVTX_MAX:
         # A PSBT goes out of the heap, into the signer's prevtx buffer: it stays until signing, while the
         # screens and the camera cut the heap around it. Its prevtxs are read there in place (put_prevtxs)
@@ -430,3 +445,55 @@ def _get_data_psbt_ur(self):
 
 
 DecodeQR.get_psbt, DecodeQR.get_data_psbt = _get_psbt_ur, _get_data_psbt_ur
+
+import time
+from PIL.Image import box
+from seedsigner.gui.components import GUIConstants, linear_interp
+from seedsigner.gui.screens.psbt_screens import PSBTOverviewScreen
+
+
+def _pulses(self):
+    # As upstream's run, but a pulse's trailing grey takes its segments off the canvas, showing the chart's own
+    # grey lines beneath (#666, 3 px), rather than piling ~80 grey copies into a heap the review left in holes
+    pulse_color, line_width = GUIConstants.ACCENT_COLOR, 3
+    canvas, color = self.renderer.canvas, self.renderer.draw._c(GUIConstants.ACCENT_COLOR)
+    start_pt, end_pt = self.inputs[0][-1], self.outputs[0][0]
+    if start_pt == end_pt:
+        center_bar_pts = [end_pt, self.outputs[0][1]]
+    else:
+        mid = [linear_interp(start_pt, end_pt, t) for t in (0.25, 0.5, 0.75)]
+        center_bar_pts = [start_pt] + [(int(p[0]), int(p[1])) for p in mid] + [end_pt]
+    # Each step's segments and their boxes, made once while the screen's heap is still whole
+    steps = [[[p[i], p[i + 1]] for p in curves] for curves, n in
+             ((self.inputs, len(self.inputs[0])), ([center_bar_pts], len(center_bar_pts)), (self.outputs, len(self.outputs[0])))
+             for i in range(n - 1)]
+    steps = [[(pts, box(("line", pts, 0, line_width))) for pts in s] for s in steps]
+
+    def draw(k, pulse):
+        for pts, b in steps[k]:
+            if pulse:
+                canvas.add(("line", pts, color, line_width), b)
+                continue
+            for i in range(len(canvas.ops) - 1, -1, -1):
+                if canvas.ops[i][0] == "line" and canvas.ops[i][1] is pts:
+                    del canvas.ops[i], canvas.boxes[i]
+            d = canvas.dirty
+            canvas.dirty = b if d is None else (min(d[0], b[0]), min(d[1], b[1]), max(d[2], b[2]), max(d[3], b[3]))
+
+    pulses, prev_pulse = [], False
+    while self.keep_running:
+        with self.renderer.lock:
+            if not pulses or (prev_pulse and pulses[-1][0] == 10):
+                pulses.append([0, not prev_pulse])
+                prev_pulse = pulses[-1][1]
+            for pulse_num, pulse in enumerate(pulses):
+                if pulse[0] >= len(steps):
+                    del pulses[pulse_num]
+                    continue
+                draw(pulse[0], pulse[1])
+                pulse[0] += 1
+            self.renderer.show_image()
+        time.sleep(0.02)
+
+
+PSBTOverviewScreen.TxExplorerAnimationThread.run = _pulses

@@ -133,16 +133,35 @@ def _line(ax, ay, bx, by, c, width, dx, dy, clip):
         _fill(dx + x + lo, dy + y + lo, dx + x + hi + 1, dy + y + hi + 1, c, clip)
 
 
+def _sin_table():
+    import math, array
+    return array.array("h", [int(math.sin(math.radians(q / 4)) * 16384 + 0.5) for q in range(361)])
+
+
+_SIN = _sin_table()  # quarter degrees 0 to 90, times 16384
+
+
+def _sin(q):
+    q %= 1440
+    if q > 720:
+        return -_sin(q - 720)
+    return _SIN[720 - q] if q > 360 else _SIN[q]
+
+
 def _arc(x0, y0, x1, y1, start, end, c, width, dx, dy, clip):
-    import math
-    cx, cy, rx, ry = (x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0) / 2, (y1 - y0) / 2
+    # In integers: floats are heap objects here, and a loading spinner's thousands per frame, freed between what
+    # a PSBT's parse kept, left the heap in 16-byte holes
+    start, end = int(start), int(end)
     while end < start:
         end += 360
-    steps = max(8, int((end - start) / 360 * 2 * math.pi * max(rx, ry)))
+    cx2, cy2, rx2, ry2 = x0 + x1, y0 + y1, x1 - x0, y1 - y0  # twice the centre and the radii
+    steps = max(8, (end - start) * max(rx2, ry2) * 355 // (113 * 360))  # pi * the diameter * the sweep
     for i in range(steps + 1):
-        a = math.radians(start + (end - start) * i / steps)
+        q = (4 * start * steps + 4 * (end - start) * i) // steps
+        sn, cs = _sin(q), _sin(q + 360)
         for w in range(width):
-            x, y = int(cx + (rx - w) * math.cos(a) + 0.5), int(cy + (ry - w) * math.sin(a) + 0.5)
+            x = (cx2 * 16384 + (rx2 - 2 * w) * cs + 16384) // 32768
+            y = (cy2 * 16384 + (ry2 - 2 * w) * sn + 16384) // 32768
             _fill(dx + x, dy + y, dx + x + 1, dy + y + 1, c, clip)
 
 
