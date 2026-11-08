@@ -86,9 +86,13 @@ class Image:
             self.boxes = [box(o) for o in self.ops]
         cover = opaque(op)
         if cover or op[0] == "rect" and op[6] is not None or op[0] in ("line", "arc"):
-            keep = [i for i, (o, b) in enumerate(zip(self.ops, self.boxes)) if not hidden(o, b, op, cover)]
-            if len(keep) < len(self.ops):
-                self.ops, self.boxes = [self.ops[i] for i in keep], [self.boxes[i] for i in keep]
+            # In place: a PSBT chart's pulses come here for each segment, and new lists of all the ops would not
+            # find room in a fragmented heap
+            i = len(self.ops)
+            while i:
+                i -= 1
+                if hidden(self.ops[i], self.boxes[i], op, cover):
+                    del self.ops[i], self.boxes[i]
         self.ops.append(op)
         self.boxes.append(box(op))
 

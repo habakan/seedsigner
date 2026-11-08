@@ -30,7 +30,8 @@ class ST7789(BaseDisplayDriver):
         region = image.dirty if whole and image is ST7789.shown else None
         if whole and image is ST7789.shown and region is None:
             return  # nothing drawn since
-        ST7789.last = (image.snapshot(), x_start, y_start, image.size)
+        # The ops themselves, not a copy each frame of an animation; they change only under the renderer's lock
+        ST7789.last = (image.ops, x_start, y_start, image.size)
         render(*ST7789.last, _gfx.show, region)
         image.dirty = None
         ST7789.shown = image if whole else None
