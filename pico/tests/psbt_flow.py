@@ -38,19 +38,32 @@ def frames(raw):
 
 def put(port, name, text):
     """text into the device's file name, through the raw REPL in 4 KB scripts: it compiles each on the heap."""
+    return repl(port, [f"f = open({name!r}, {'wa'[k > 0]!r})\nf.write({text[i:i + 4000]!r})\nf.close()\n"
+                       f"import os\nprint(os.stat({name!r})[6])\n" for k, i in enumerate(range(0, len(text), 4000))])
+
+
+def remove(port, name):
+    """Removes the device's file name: a qr_inject.txt left behind stands in for the camera in a later, manual scan."""
+    return repl(port, [f"import os\ntry:\n os.remove({name!r})\nexcept OSError:\n pass\nprint('removed')\n"], reboot=True)
+
+
+def repl(port, scripts, reboot=False):
+    """Runs each script at the raw REPL, which stops main.py, and returns the last one's output; reboot starts it again."""
     import serial
     s = serial.Serial(port, 115200, timeout=0.1, write_timeout=5)
     s.write(b"\r\x03\x03"); time.sleep(0.6); s.read(100000)
     s.write(b"\x01"); time.sleep(0.4); s.read(100000)
-    for k, i in enumerate(range(0, len(text), 4000)):
-        code = f"f = open({name!r}, {'wa'[k > 0]!r})\nf.write({text[i:i + 4000]!r})\nf.close()\nimport os\nprint(os.stat({name!r})[6])\n"
+    for code in scripts:
         for j in range(0, len(code), 256):  # paced: the USB serial drops what it cannot take
             s.write(code[j:j + 256].encode()); time.sleep(0.02)
         s.write(b"\x04")
         buf, end = b"", time.time() + 30
         while buf.count(b"\x04") < 2 and time.time() < end:
             buf += s.read(4096)
-    s.write(b"\x02"); s.close()
+    s.write(b"\x02")
+    if reboot:
+        time.sleep(0.3); s.write(b"\x04")  # a soft reboot, from the friendly REPL
+    s.close()
     return buf.split(b"OK", 1)[-1].split(b"\x04")[0].strip().decode(errors="replace")
 
 
@@ -151,6 +164,7 @@ def run(port, name, raw, reset, network=None, from_screen=False):
         out = subprocess.run(DRIVE + ["exec", SOCK, str(OUT / "signed.py"), "8"], cwd=R, capture_output=True, text=True).stdout
     finally:
         serve.terminate()
+        remove(port, "qr_inject.txt")
     m = re.findall(r"^B64 (\S+)", out, re.M)
     return base64.b64decode("".join(m)) if m else None
 
