@@ -70,6 +70,8 @@ def _serial(channel):
             import micropython, _wamr
             micropython.mem_info()  # its last line has the largest free block, in 16-byte blocks
             print("free", gc.mem_free(), "wamr", _wamr.pool_info())  # the heap, after the screen just drawn
+            if "pico_boot" in sys.modules:
+                print("ur errors", sys.modules["pico_boot"].ur_errors)
             print("<<FB")
             screenshot(lambda part: print(binascii.b2a_base64(part, newline=False).decode()))
             print("FB>>")

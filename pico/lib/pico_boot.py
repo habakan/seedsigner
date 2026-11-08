@@ -392,6 +392,23 @@ def _receive_part_whole(self, part):
 
 
 URDecoder.receive_part = _receive_part_whole
+
+_fd_receive = FountainDecoder.receive_part
+# For the dev screenshot's log (RPi/GPIO.py): upstream's URDecoder drops a part on any exception and says nothing,
+# so a scan that ran out of heap just never completed
+ur_errors = {"count": 0, "last": None}
+
+
+def _fd_receive_noted(self, p):
+    try:
+        return _fd_receive(self, p)
+    except Exception as e:
+        ur_errors["count"] += 1
+        ur_errors["last"] = repr(e)[:60]
+        raise
+
+
+FountainDecoder.receive_part = _fd_receive_noted
 _put_prevtxs = BitwasmReview.put_prevtxs
 
 
