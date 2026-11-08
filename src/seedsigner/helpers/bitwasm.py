@@ -220,7 +220,7 @@ class Wordlist:
 
     def with_prefix(self, prefix):
         """The words starting with `prefix`, found by bisecting rather than by making all 2048 of them."""
-        return [self[i] for i in range(self._bisect(prefix), self._bisect(prefix + "\x7f"))]
+        return _Words(self, self._bisect(prefix), self._bisect(prefix + "\x7f"))
 
     def __contains__(self, word):
         try:
@@ -229,6 +229,24 @@ class Wordlist:
         except (ValueError, TypeError):
             return False
 
+
+
+class _Words:
+    """A run of the wordlist, read as it is indexed: a list of the 136 starting with "a" found no room in the Pico's
+    heap by the tenth word of a seed."""
+    def __init__(self, wordlist, lo, hi):
+        self._w, self._lo, self._n = wordlist, lo, hi - lo
+
+    def __len__(self):
+        return self._n
+
+    def __getitem__(self, i):
+        if not -self._n <= i < self._n:
+            raise IndexError("index out of range")
+        return self._w[self._lo + i % self._n]
+
+    def __iter__(self):
+        return (self._w[self._lo + i] for i in range(self._n))
 
 
 # Read once a review, right after it. The Pico fills the native signer's own plan, which the heap could not spare
