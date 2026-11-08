@@ -498,6 +498,13 @@ def _pulses(self):
 
 PSBTOverviewScreen.TxExplorerAnimationThread.run = _pulses
 
+from seedsigner.models.encode_qr import BaseStaticQrEncoder, StaticXpubQrEncoder
+
+# MicroPython looks methods up depth first, so BaseXpubQrEncoder's base answered these with "not implemented"
+StaticXpubQrEncoder.seq_len = BaseStaticQrEncoder.seq_len
+StaticXpubQrEncoder.cur_part = BaseStaticQrEncoder.cur_part
+StaticXpubQrEncoder.is_complete = BaseStaticQrEncoder.is_complete
+
 from seedsigner.hardware.camera import Camera
 from seedsigner.views.tools_views import ToolsImageEntropyMnemonicLengthView
 import seedsigner.gui.screens.tools_screens as _tools_screens
