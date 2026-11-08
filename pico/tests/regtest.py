@@ -1,8 +1,8 @@
 """
 Regtest spends signed by the device, as psbt_flow.py drives it, set to Regtest: Bitcoin Core's watch-only wallet for
-BIP39's test seed (coin type 1) funds P2WPKH beside P2TR, P2PKH, and a 2-of-3 P2SH-P2WSH whose cosigner is a Core
-wallet holding the "zoo ... wrong" seed. The signed PSBT is read off the screen's animated QR, combined with the
-unsigned one, finalized, broadcast and mined.
+BIP39's test seed (coin type 1) funds P2WPKH beside P2TR, P2PKH, and 2-of-3 P2SH-P2WSH and P2SH (BIP45) multisigs
+whose cosigner is a Core wallet holding the "zoo ... wrong" seed. The signed PSBT is read off the screen's animated QR,
+combined with the unsigned one, finalized, broadcast and mined.
 
     .venv/bin/python pico/tests/regtest.py PORT [--reset CMD]
 
@@ -40,8 +40,9 @@ def desc(d):
     return d + "#" + json.loads(cli("getdescriptorinfo", d))["checksum"]  # Core's own form would drop a tprv
 
 
-def multi(chain, priv=None):
-    return desc(f"sh(wsh(sortedmulti(2,{','.join(key(k, 'm/48h/1h/0h/1h', chain, k is priv) for k in [ME] + COS)})))")
+def multi(chain, priv=None, legacy=False):
+    keys = ",".join(key(k, "m/45h" if legacy else "m/48h/1h/0h/1h", chain, k is priv) for k in [ME] + COS)
+    return desc(f"sh(sortedmulti(2,{keys}))" if legacy else f"sh(wsh(sortedmulti(2,{keys})))")
 
 
 def setup():
@@ -57,12 +58,12 @@ def setup():
     cli("-named", "createwallet", "wallet_name=dev", "disable_private_keys=true", "blank=true")
     single = [desc(f"{w}({key(ME, p, c)})") for c in (0, 1) for w, p in [("wpkh", "m/84h/1h/0h"), ("pkh", "m/44h/1h/0h"), ("tr", "m/86h/1h/0h")]]
     imported("dev", [{"desc": d, "timestamp": "now", "active": True, "internal": "/1/*" in d} for d in single] +
-             [{"desc": multi(c), "timestamp": "now", "internal": c == 1} for c in (0, 1)])
+             [{"desc": multi(c, None, l), "timestamp": "now", "internal": c == 1} for c in (0, 1) for l in (False, True)])
     cli("-named", "createwallet", "wallet_name=cos", "blank=true")
-    imported("cos", [{"desc": multi(c, COS[0]), "timestamp": "now"} for c in (0, 1)])
+    imported("cos", [{"desc": multi(c, COS[0], l), "timestamp": "now"} for c in (0, 1) for l in (False, True)])
     mine(101)
     to = [cli("-rpcwallet=dev", "getnewaddress", "", t) for t in ("bech32", "bech32", "bech32m", "legacy", "legacy")]
-    for a in to + json.loads(cli("deriveaddresses", multi(0), "[0,1]")):
+    for a in to + [a for l in (False, True) for a in json.loads(cli("deriveaddresses", multi(0, None, l), "[0,1]"))]:
         cli("-rpcwallet=miner", "sendtoaddress", a, "0.5")
     mine(1)
 
@@ -78,7 +79,7 @@ def mine(n):
 
 def psbts():
     utxos = json.loads(cli("-rpcwallet=dev", "listunspent"))
-    kind = lambda u: "shwsh" if u["desc"].startswith("sh(wsh") else u["desc"].split("(")[0]
+    kind = lambda u: "shwsh" if u["desc"].startswith("sh(wsh") else u["desc"].split("(")[0]  # sh: the P2SH multisig
 
     def make(kinds, amount, change):
         ins = [{"txid": u["txid"], "vout": u["vout"]} for u in utxos if kind(u) in kinds]
@@ -86,7 +87,7 @@ def psbts():
         out = json.dumps([{cli("-rpcwallet=miner", "getnewaddress"): amount}])
         return json.loads(cli("-rpcwallet=dev", "walletcreatefundedpsbt", json.dumps(ins), out, "0", json.dumps(opts), "true"))["psbt"]
     return {"wpkh_tr": make(("wpkh", "tr"), 0.7, "bech32"), "pkh": make(("pkh",), 0.6, "legacy"),
-            "sh_wsh_2of3": make(("shwsh",), 1.0, None)}
+            "sh_wsh_2of3": make(("shwsh",), 1.0, None), "sh_2of3": make(("sh",), 1.0, None)}
 
 
 if __name__ == "__main__":
@@ -102,7 +103,7 @@ if __name__ == "__main__":
             if signed is None:
                 print("  no signed QR read"); continue
             parts = [unsigned, base64.b64encode(signed).decode()]
-            if name.startswith("sh_wsh"):
+            if name.startswith("sh_"):
                 parts.append(json.loads(cli("-rpcwallet=cos", "walletprocesspsbt", unsigned))["psbt"])
             fin = json.loads(cli("finalizepsbt", cli("combinepsbt", json.dumps(parts))))
             if not fin["complete"]:

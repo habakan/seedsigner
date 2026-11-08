@@ -7,7 +7,7 @@ PSBTParser._check_with_bitwasm for what has to agree.
 
 Seeds are derived inside signer.wasm. It holds one key at a time: the seed last passed to use().
 
-The modules are bitwasm-signer 463b2e3's build/parser.wasm and build/signer.wasm, pinned
+The modules are bitwasm-signer 91d2c5d's build/parser.wasm and build/signer.wasm, pinned
 by hash. libiwasm (WAMR 2.4.5, classic interpreter) comes from the OS image. On MicroPython the
 signer is the same C linked into the firmware, which the Pico could not afford to interpret.
 """
@@ -23,10 +23,10 @@ from seedsigner.models.settings import SettingsConstants
 
 logger = logging.getLogger(__name__)
 
-PARSER_SHA256 = "615f59cd4012c576b30b0adfdb2a81d2211d881ffae06a38c4af3c96c437d6ce"
+PARSER_SHA256 = "17574da292779c2944b210feb1fb5e4f66af5e2fd33f95a1351868405ca9c071"
 # The Pico assembles UR in Python, so it runs the build without the UR decoder: 42 KB less of WAMR's pool
-PARSER_NO_UR_SHA256 = "78fe0fdd5d0ea8b8f17e8614443496ddcab98470824164266ea6f5a12c47a7f9"
-SIGNER_SHA256 = "a0f347755653f3bc73ab875dcfec60477914271073504ca3fd4d25ea8547641e"
+PARSER_NO_UR_SHA256 = "b675b59f88d2ce13af53c2c8320948afbf170adace162b063e736acc425f4627"
+SIGNER_SHA256 = "c760e714be601dc12583110926f39f9ace21823cbb5d7d33f5282abc4ced3faa"
 
 # Upstream's rules: OP_RETURN of complete pushes only, and SegWit v0 inputs signed without non_witness_utxo
 SIGNER_OPTIONS = {"strict_op_return": True, "prevtx_optional": True}

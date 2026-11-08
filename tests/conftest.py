@@ -3,35 +3,22 @@ import pytest
 
 # Upstream tests whose psbts signer.wasm refuses, so PSBTParser now stops where embit
 # alone went on. Strict, so a test that starts passing (signer.wasm grew) is noticed.
-NESTED_OR_LEGACY = "signer.wasm signs no legacy P2SH multisig"
 MALFORMED = "a fixture parser.wasm rejects: no outputs, or a non_witness_utxo that is not the input's"
 ALREADY_SIGNED = "signer.wasm has nothing to sign when this seed's signature is already there"
 SPK_MAX = "parser.wasm takes output scripts of at most 83 bytes, so an OP_RETURN of at most 80"
 
 BITWASM_REFUSES = {
     "test_flows_psbt.py::TestPSBTFlows::test_scan_multisig_psbt_seed_already_signed_flow": ALREADY_SIGNED,
-    "test_psbt_parser.py::TestPSBTParser::test_multisig_legacy_p2sh": NESTED_OR_LEGACY,
     "test_psbt_parser.py::TestPSBTParser::test_missing_fingerprint_handling": MALFORMED,
-    "test_psbt_parser.py::TestPSBTParser::test_verify_multisig_output": NESTED_OR_LEGACY,
-    "test_psbt_parser.py::test_p2sh_legacy_multisig": NESTED_OR_LEGACY,
     "test_psbt_parser.py::TestPSBTParserOptimizations::test_zero_fingerprint_fill_over_many_inputs": MALFORMED,
-    "test_psbt_parser.py::TestPSBTParserOutputOwnership::test__parse__rejects_a_multisig_output_built_from_other_peoples_keys": NESTED_OR_LEGACY,
-    "test_psbt_parser.py::TestPSBTParserOutputOwnership::test__parse__rejects_a_multisig_output_that_hides_this_seed_behind_another_fingerprint": NESTED_OR_LEGACY,
-    "test_psbt_parser.py::TestPSBTParserOutputOwnership::test__parse__rejects_a_multisig_output_whose_supplied_script_is_not_its_own": NESTED_OR_LEGACY,
-    "test_psbt_parser.py::TestPSBTParserOutputOwnership::test__parse__counts_a_different_quorum_as_a_spend": NESTED_OR_LEGACY,
-    "test_psbt_parser.py::TestPSBTParserOutputOwnership::test__parse__counts_a_different_quorum_as_a_spend_when_its_xpubs_are_supplied": NESTED_OR_LEGACY,
-    "test_psbt_parser.py::TestPSBTParserOutputOwnership::test__parse__counts_a_different_quorum_as_change_if_no_global_xpubs": NESTED_OR_LEGACY,
     "test_psbt_parser.py::test_parse_op_return_content_pushdata2": SPK_MAX,
-    # A parametrized test's psbt, by the start of its base64: P2SH multisig
-    "test_psbt_parser.py::TestPSBTInputAmountVerification::test_untampered_psbts_verify[cHNidP8BADMCAAAAAarS*": NESTED_OR_LEGACY,
 }
 
 
 def pytest_collection_modifyitems(config, items):
     for item in items:
         node = item.nodeid.split("tests/", 1)[-1]
-        reason = BITWASM_REFUSES.get(node) or next(
-            (r for k, r in BITWASM_REFUSES.items() if k.endswith("*") and node.startswith(k[:-1])), None)
+        reason = BITWASM_REFUSES.get(node)
         if reason:
             item.add_marker(pytest.mark.xfail(reason=reason, strict=True))
 

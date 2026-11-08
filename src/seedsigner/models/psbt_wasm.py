@@ -5,6 +5,7 @@ The signer re-derives every key it calls ours, so an output it marks change or s
 plan's path: that path is `verified_derivation_path`. P2WSH change is the psbt's claim, as embit's parser
 has it, until verify_multisig_output() registers the descriptor and the signer re-derives it.
 """
+import hashlib
 import struct
 
 from seedsigner.helpers import bitwasm, wallet
@@ -14,6 +15,44 @@ from seedsigner.models.psbt_errors import (PSBTBitwasmRefusedError, PSBTInputAmo
 from seedsigner.models.settings import SettingsConstants
 
 P = bitwasm
+
+
+
+# RIPEMD-160's message word order and rotations, the left line's 80 steps then the right's
+_RMD_W = bytes([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 7, 4, 13, 1, 10, 6, 15, 3, 12, 0, 9, 5, 2, 14,
+    11, 8, 3, 10, 14, 4, 9, 15, 8, 1, 2, 7, 0, 6, 13, 11, 5, 12, 1, 9, 11, 10, 0, 8, 12, 4, 13, 3, 7, 15, 14, 5, 6,
+    2, 4, 0, 5, 9, 7, 12, 2, 10, 14, 1, 3, 8, 11, 6, 15, 13, 5, 14, 7, 0, 9, 2, 11, 4, 13, 6, 15, 8, 1, 10, 3, 12, 6,
+    11, 3, 7, 0, 13, 5, 10, 14, 15, 8, 12, 4, 9, 1, 2, 15, 5, 1, 3, 7, 14, 6, 9, 11, 8, 12, 2, 10, 0, 4, 13, 8, 6, 4,
+    1, 3, 11, 15, 0, 5, 12, 2, 13, 9, 7, 10, 14, 12, 15, 10, 4, 1, 5, 8, 7, 6, 2, 13, 14, 0, 3, 9, 11])
+_RMD_S = bytes([11, 14, 15, 12, 5, 8, 7, 9, 11, 13, 14, 15, 6, 7, 9, 8, 7, 6, 8, 13, 11, 9, 7, 15, 7, 12, 15, 9, 11,
+    7, 13, 12, 11, 13, 6, 7, 14, 9, 13, 15, 14, 8, 13, 6, 5, 12, 7, 5, 11, 12, 14, 15, 14, 15, 9, 8, 9, 14, 5, 6, 8,
+    6, 5, 12, 9, 15, 5, 11, 6, 8, 13, 12, 5, 12, 13, 14, 11, 8, 5, 6, 8, 9, 9, 11, 13, 15, 15, 5, 7, 7, 8, 11, 14,
+    14, 12, 6, 9, 13, 15, 7, 12, 8, 9, 11, 7, 7, 12, 7, 6, 15, 13, 11, 9, 7, 15, 11, 8, 6, 6, 14, 12, 13, 5, 14, 13,
+    13, 7, 5, 15, 5, 8, 11, 14, 14, 6, 14, 6, 9, 12, 9, 12, 5, 15, 8, 8, 5, 12, 9, 12, 5, 14, 6, 8, 13, 6, 5, 15, 13,
+    11, 11])
+_RMD_K = (0, 0x5A827999, 0x6ED9EBA1, 0x8F1BBCDC, 0xA953FD4E, 0x50A28BE6, 0x5C4DD124, 0x6D703EF3, 0x7A6D76E9, 0)
+
+
+def _hash160(data: bytes) -> bytes:
+    # RIPEMD-160 of SHA-256, here because the Pico's hashlib has no RIPEMD-160
+    M = 0xFFFFFFFF
+    f = (lambda x, y, z: x ^ y ^ z, lambda x, y, z: (x & y) | (~x & z), lambda x, y, z: (x | ~y) ^ z,
+         lambda x, y, z: (x & z) | (y & ~z), lambda x, y, z: x ^ (y | ~z))
+    m = hashlib.sha256(data).digest() + b"\x80" + bytes(23) + struct.pack("<Q", 256)
+    h = [0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0]
+    x = struct.unpack("<16I", m)
+    lines = []
+    for side in (0, 1):
+        a, b, c, d, e = h
+        for j in range(80):
+            r = j // 16
+            t = (a + f[4 - r if side else r](b, c, d) + x[_RMD_W[80 * side + j]] + _RMD_K[5 * side + r]) & M
+            s = _RMD_S[80 * side + j]
+            a, b, c, d, e = e, (((t << s) | (t >> (32 - s))) + e) & M, b, (c << 10 | c >> 22) & M, d
+        lines.append((a, b, c, d, e))
+    (a1, b1, c1, d1, e1), (a2, b2, c2, d2, e2) = lines
+    h = [(h[1] + c1 + d2) & M, (h[2] + d1 + e2) & M, (h[3] + e1 + a2) & M, (h[4] + a1 + b2) & M, (h[0] + b1 + c2) & M]
+    return struct.pack("<5I", *h)
 
 
 
@@ -34,7 +73,8 @@ def _policy(spk: bytes, wscript: bytes) -> dict:
     if len(spk) == 23 and spk[:2] == b"\xa9\x14" and not wscript:
         return {"type": "p2sh-p2wpkh"}
     if (len(spk) == 34 and spk[:2] == b"\x00\x20" or len(spk) == 23) and wscript:
-        kind = "p2wsh" if len(spk) == 34 else "p2sh-p2wsh"  # the signer passes a P2SH a witness script only so
+        # A P2SH's is P2SH-P2WSH's witness script, or BIP45's redeem script, which hashes to the P2SH itself
+        kind = "p2wsh" if len(spk) == 34 else "p2sh" if _hash160(wscript) == spk[2:22] else "p2sh-p2wsh"
         if wscript[-1] == 0xae and 0x51 <= wscript[0] <= 0x60:  # OP_m <keys> OP_n OP_CHECKMULTISIG
             return {"type": kind, "m": wscript[0] - 0x50, "n": wscript[-2] - 0x50}
         return {"type": kind}  # Liana's or_d, which SeedSigner shows as single key
@@ -172,7 +212,7 @@ class WasmPSBTParser:
 
 
     def _claims_multisig_change(self, plan, at, review) -> bool:
-        """A P2WSH (P2SH-P2WSH) output the psbt says is this seed's, before any descriptor can say whether it is."""
+        """A P2WSH (or P2SH) output the psbt says is this seed's, before any descriptor can say whether it is."""
         spk, key = at + P.PLAN_OUT_SPK, at + P.PLAN_OUT_KEY
         wrapped = (plan[spk] == 34 and plan[spk + 1:spk + 3] == b"\x00\x20") if self.policy["type"] == "p2wsh" else plan[spk] == 23
         return (not review.wallet_registered and self.is_multisig and wrapped
