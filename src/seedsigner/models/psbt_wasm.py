@@ -29,12 +29,15 @@ def _policy(spk: bytes, wscript: bytes) -> dict:
         return {"type": "p2wpkh"}
     if len(spk) == 34 and spk[:2] == b"\x51\x20":
         return {"type": "p2tr"}
-    if len(spk) == 23 and spk[:2] == b"\xa9\x14":
+    if len(spk) == 25 and spk[:3] == b"\x76\xa9\x14":
+        return {"type": "p2pkh"}
+    if len(spk) == 23 and spk[:2] == b"\xa9\x14" and not wscript:
         return {"type": "p2sh-p2wpkh"}
-    if len(spk) == 34 and spk[:2] == b"\x00\x20" and wscript:
+    if (len(spk) == 34 and spk[:2] == b"\x00\x20" or len(spk) == 23) and wscript:
+        kind = "p2wsh" if len(spk) == 34 else "p2sh-p2wsh"  # the signer passes a P2SH a witness script only so
         if wscript[-1] == 0xae and 0x51 <= wscript[0] <= 0x60:  # OP_m <keys> OP_n OP_CHECKMULTISIG
-            return {"type": "p2wsh", "m": wscript[0] - 0x50, "n": wscript[-2] - 0x50}
-        return {"type": "p2wsh"}  # Liana's or_d, which SeedSigner shows as single key
+            return {"type": kind, "m": wscript[0] - 0x50, "n": wscript[-2] - 0x50}
+        return {"type": kind}  # Liana's or_d, which SeedSigner shows as single key
     return None
 
 
@@ -64,6 +67,7 @@ def _op_return(spk: bytes) -> bytes:
 # NOT_OURS also covers a P2WSH input whose witness script is not its own, which upstream calls an attack
 _REFUSALS = {"parser: UTXO": PSBTMissingInputUtxoError, "parser: UTXO_MISMATCH": PSBTInputAmountVerificationError,
              "review: PREVTX_MISMATCH": PSBTInputAmountVerificationError, "review: FEE": PSBTNegativeFeeError,
+             "review: PREVTX_MISSING": PSBTInputAmountVerificationError,
              "review: NOT_OURS": PSBTInputOwnershipClaimError, "review: OP_RETURN": PSBTMalformedOpReturnError}
 
 
@@ -114,7 +118,8 @@ class WasmPSBTParser:
             if review["will_sign"][i]:
                 at = P.PLAN_INPUTS + i * P.PLAN_INPUT_SIZE + P.PLAN_IN_SPK
                 ws = P.PLAN_WSCRIPTS + i * P.PLAN_WSCRIPT_SIZE
-                self.policy = _policy(plan[at + 1:at + 1 + plan[at]], plan[ws + 1:ws + 1 + plan[ws]])
+                n = plan[ws] | plan[ws + 1] << 8  # a 2-byte length since plan version 4
+                self.policy = _policy(plan[at + 1:at + 1 + plan[at]], plan[ws + 2:ws + 2 + n])
                 break
 
         for i, out in enumerate(shown["outputs"]):
@@ -167,9 +172,10 @@ class WasmPSBTParser:
 
 
     def _claims_multisig_change(self, plan, at, review) -> bool:
-        """A P2WSH output the psbt says is this seed's, before any descriptor can say whether it is."""
+        """A P2WSH (P2SH-P2WSH) output the psbt says is this seed's, before any descriptor can say whether it is."""
         spk, key = at + P.PLAN_OUT_SPK, at + P.PLAN_OUT_KEY
-        return (not review.wallet_registered and self.is_multisig and plan[spk] == 34 and plan[spk + 1:spk + 3] == b"\x00\x20"
+        wrapped = (plan[spk] == 34 and plan[spk + 1:spk + 3] == b"\x00\x20") if self.policy["type"] == "p2wsh" else plan[spk] == 23
+        return (not review.wallet_registered and self.is_multisig and wrapped
                 and plan[key] and struct.unpack_from("<I", plan, key + 4)[0] == int(bitwasm.use(self.seed).fingerprint, 16))
 
 

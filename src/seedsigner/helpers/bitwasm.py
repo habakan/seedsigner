@@ -23,10 +23,10 @@ from seedsigner.models.settings import SettingsConstants
 
 logger = logging.getLogger(__name__)
 
-PARSER_SHA256 = "cf79ee83307e77b7cbe468d4b43f838ef7e8602e8ee2d29d9bf82001f1553ccf"
+PARSER_SHA256 = "615f59cd4012c576b30b0adfdb2a81d2211d881ffae06a38c4af3c96c437d6ce"
 # The Pico assembles UR in Python, so it runs the build without the UR decoder: 42 KB less of WAMR's pool
-PARSER_NO_UR_SHA256 = "5e02223cfba08af5f4bdde33c78f15b4782cd9e257f285ec4e1b6e2b20daa90a"
-SIGNER_SHA256 = "13d0c3b1529faa634b106f7cfb904310a1c4d91eac2e418b0883a52e0927ccbd"
+PARSER_NO_UR_SHA256 = "78fe0fdd5d0ea8b8f17e8614443496ddcab98470824164266ea6f5a12c47a7f9"
+SIGNER_SHA256 = "a0f347755653f3bc73ab875dcfec60477914271073504ca3fd4d25ea8547641e"
 
 # Upstream's rules: OP_RETURN of complete pushes only, and SegWit v0 inputs signed without non_witness_utxo
 SIGNER_OPTIONS = {"strict_op_return": True, "prevtx_optional": True}
@@ -35,7 +35,7 @@ OWNER_EXTERNAL, OWNER_CHANGE, OWNER_SELF = 0, 1, 2
 
 # plan_t, from parser/c/include/plan.h (its _Static_asserts pin these): inputs and outputs, and in
 # each the keypath {depth u8, fingerprint u32, path u32[8]} and the scriptPubKey {len u8, bytes[83]}
-PLAN_INPUTS, PLAN_INPUT_SIZE, PLAN_OUTPUTS, PLAN_OUTPUT_SIZE, PLAN_WSCRIPTS, PLAN_WSCRIPT_SIZE = 24, 176, 2840, 136, 5016, 220
+PLAN_INPUTS, PLAN_INPUT_SIZE, PLAN_OUTPUTS, PLAN_OUTPUT_SIZE, PLAN_WSCRIPTS, PLAN_WSCRIPT_SIZE = 24, 176, 2840, 136, 5016, 522
 PLAN_IN_SPK, PLAN_IN_KEY, PLAN_OUT_SPK, PLAN_OUT_KEY = 48, 132, 8, 92
 TEXT_KIND_OP_RETURN = 1
 
@@ -231,9 +231,13 @@ class Wordlist:
 
 
 
-# Read once a review, right after it, while the signer keeps its own copy: one buffer taken at import, as a
-# fresh 8.5 KB may not be found in the Pico's heap by the time a PSBT is scanned
-_plan = bytearray(PLAN_SIZE)
+# Read once a review, right after it. The Pico fills the native signer's own plan, which the heap could not spare
+# 13 KB for; elsewhere one buffer is taken at import
+try:
+    from _bitwasm import plan_buffer
+    _plan = plan_buffer()
+except ImportError:
+    _plan = bytearray(PLAN_SIZE)
 
 
 class BitwasmReview:

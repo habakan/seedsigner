@@ -17,5 +17,6 @@ target_compile_options(bitwasm_signer PRIVATE -Os -Wno-unused-function -ffunctio
 
 add_library(usermod_bitwasm INTERFACE)
 target_sources(usermod_bitwasm INTERFACE ${CMAKE_CURRENT_LIST_DIR}/modbitwasm.c)
+target_include_directories(usermod_bitwasm INTERFACE ${BS}/parser/c/include)
 target_link_libraries(usermod_bitwasm INTERFACE bitwasm_signer)
 target_link_libraries(usermod INTERFACE usermod_bitwasm)

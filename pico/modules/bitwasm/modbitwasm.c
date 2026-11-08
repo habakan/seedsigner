@@ -5,6 +5,7 @@
 #include "py/obj.h"
 #include "py/objarray.h"
 #include "py/runtime.h"
+#include "plan.h"
 
 const void * signer_input(void);
 unsigned int signer_input_cap(void);
@@ -420,10 +421,17 @@ static mp_obj_t prevtx_buffer(void) {
 }
 static MP_DEFINE_CONST_FUN_OBJ_0(prevtx_buffer_obj, prevtx_buffer);
 
+/* The signer's own plan, for bitwasm.py to fill from parser.wasm: no 13 KB copy of it in the heap */
+static mp_obj_t plan_buffer(void) {
+    return mp_obj_new_bytearray_by_ref(sizeof(plan_t), (void *)signer_plan());
+}
+static MP_DEFINE_CONST_FUN_OBJ_0(plan_buffer_obj, plan_buffer);
+
 static const mp_rom_map_elem_t globals[] = {
     { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR__bitwasm) },
     { MP_ROM_QSTR(MP_QSTR_memory), MP_ROM_PTR(&memory_obj) },
     { MP_ROM_QSTR(MP_QSTR_prevtx_buffer), MP_ROM_PTR(&prevtx_buffer_obj) },
+    { MP_ROM_QSTR(MP_QSTR_plan_buffer), MP_ROM_PTR(&plan_buffer_obj) },
     { MP_ROM_QSTR(MP_QSTR_signer_input), MP_ROM_PTR(&w_signer_input_obj) },
     { MP_ROM_QSTR(MP_QSTR_signer_input_cap), MP_ROM_PTR(&w_signer_input_cap_obj) },
     { MP_ROM_QSTR(MP_QSTR_signer_plan), MP_ROM_PTR(&w_signer_plan_obj) },

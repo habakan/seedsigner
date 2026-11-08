@@ -6,8 +6,10 @@ from embit.psbt import PSBT
 
 from seedsigner.helpers import bitwasm
 from seedsigner.helpers.bitwasm import BitwasmError
+from seedsigner.models.psbt_errors import PSBTInputAmountVerificationError
 from seedsigner.models.psbt_parser import (PSBT_IN_TAP_KEY_SIG, PSBTBitwasmDisagreementError,
     PSBTBitwasmRefusedError, PSBTParser)
+from seedsigner.models.psbt_wasm import WasmPSBTParser
 from seedsigner.models.settings_definition import SettingsConstants
 
 from psbt_testing_util import PSBTTestData, create_output
@@ -84,10 +86,42 @@ def test_disagreement_is_refused(monkeypatch):
         PSBTParser(p=psbt, seed=PSBTTestData.two_input_seed, network=SettingsConstants.REGTEST)
 
 
-def test_legacy_p2pkh_is_refused():
+def test_signs_legacy_p2pkh_as_embit_does():
+    change = PSBT.parse(a2b_base64(PSBTTestData.SINGLE_SIG_LEGACY_P2PKH_1_INPUT)).inputs[0].utxo.value - 100_000 - 500
+    psbt = build_psbt(PSBTTestData.SINGLE_SIG_LEGACY_P2PKH_1_INPUT, (PSBTTestData.SINGLE_SIG_NATIVE_SEGWIT_RECEIVE, 100_000),
+                      (PSBTTestData.SINGLE_SIG_LEGACY_P2PKH_CHANGE, change))
+    parser = PSBTParser(p=psbt, seed=PSBTTestData.seed, network=SettingsConstants.REGTEST)
+    assert parser.policy == {"type": "p2pkh"} and parser.num_change_outputs == 1
+
+    signed = PSBT.parse(parser.bitwasm_review.sign())
+    assert [dict(inp.partial_sigs) for inp in signed.inputs] == embit_signatures(psbt, parser)
+
+
+def test_legacy_p2pkh_without_its_previous_transaction_is_refused():
+    """A legacy signature commits to no amount, so the signer proves it from the previous transaction."""
     psbt = build_psbt(PSBTTestData.SINGLE_SIG_LEGACY_P2PKH_1_INPUT, (PSBTTestData.SINGLE_SIG_NATIVE_SEGWIT_RECEIVE, 100_000))
-    with pytest.raises(PSBTBitwasmRefusedError):
-        PSBTParser(p=psbt, seed=PSBTTestData.seed, network=SettingsConstants.REGTEST)
+    psbt.inputs[0].witness_utxo = psbt.inputs[0].utxo
+    psbt.inputs[0].non_witness_utxo = None
+    with pytest.raises(PSBTInputAmountVerificationError):  # the Pico's parser, as upstream's embit one raises
+        WasmPSBTParser(psbt, PSBTTestData.seed, SettingsConstants.REGTEST)
+
+
+def test_nested_multisig_change_is_change_once_the_descriptor_registers():
+    descriptor = Descriptor.from_string(PSBTTestData.MULTISIG_NESTED_SEGWIT_DESCRIPTOR)
+    change = PSBT.parse(a2b_base64(PSBTTestData.MULTISIG_NESTED_SEGWIT_1_INPUT)).inputs[0].utxo.value - 100_000 - 500
+    psbt = build_psbt(PSBTTestData.MULTISIG_NESTED_SEGWIT_1_INPUT, (PSBTTestData.SINGLE_SIG_NATIVE_SEGWIT_RECEIVE, 100_000),
+                      (PSBTTestData.MULTISIG_NESTED_SEGWIT_CHANGE, change))
+
+    without = PSBTParser(p=psbt, seed=PSBTTestData.seed, network=SettingsConstants.REGTEST)
+    assert {k: without.policy[k] for k in ("type", "m", "n")} == {"type": "p2sh-p2wsh", "m": 2, "n": 3}
+    assert not without.bitwasm_review.wallet_registered
+
+    parser = PSBTParser(p=psbt, seed=PSBTTestData.seed, network=SettingsConstants.REGTEST, multisig_descriptor=descriptor)
+    assert parser.bitwasm_review.wallet_registered
+    assert parser.bitwasm_review.display["spend"] == parser.spend_amount == 100_000
+
+    signed = PSBT.parse(parser.bitwasm_review.sign())
+    assert [dict(inp.partial_sigs) for inp in signed.inputs] == embit_signatures(psbt, parser)
 
 
 def test_sign_refuses_a_psbt_swapped_after_review():

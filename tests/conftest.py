@@ -3,16 +3,13 @@ import pytest
 
 # Upstream tests whose psbts signer.wasm refuses, so PSBTParser now stops where embit
 # alone went on. Strict, so a test that starts passing (signer.wasm grew) is noticed.
-NESTED_OR_LEGACY = "signer.wasm signs P2WPKH, P2SH-P2WPKH, P2TR key path and P2WSH multisig only"
+NESTED_OR_LEGACY = "signer.wasm signs no legacy P2SH multisig"
 MALFORMED = "a fixture parser.wasm rejects: no outputs, or a non_witness_utxo that is not the input's"
 ALREADY_SIGNED = "signer.wasm has nothing to sign when this seed's signature is already there"
 SPK_MAX = "parser.wasm takes output scripts of at most 83 bytes, so an OP_RETURN of at most 80"
 
 BITWASM_REFUSES = {
-    "test_decodepsbtqr.py::test_base64_1_input_p2sh_p2wsh": NESTED_OR_LEGACY,
     "test_flows_psbt.py::TestPSBTFlows::test_scan_multisig_psbt_seed_already_signed_flow": ALREADY_SIGNED,
-    "test_psbt_parser.py::TestPSBTParser::test_singlesig_legacy_p2pkh": NESTED_OR_LEGACY,
-    "test_psbt_parser.py::TestPSBTParser::test_multisig_nested_segwit": NESTED_OR_LEGACY,
     "test_psbt_parser.py::TestPSBTParser::test_multisig_legacy_p2sh": NESTED_OR_LEGACY,
     "test_psbt_parser.py::TestPSBTParser::test_missing_fingerprint_handling": MALFORMED,
     "test_psbt_parser.py::TestPSBTParser::test_verify_multisig_output": NESTED_OR_LEGACY,
@@ -25,11 +22,8 @@ BITWASM_REFUSES = {
     "test_psbt_parser.py::TestPSBTParserOutputOwnership::test__parse__counts_a_different_quorum_as_a_spend_when_its_xpubs_are_supplied": NESTED_OR_LEGACY,
     "test_psbt_parser.py::TestPSBTParserOutputOwnership::test__parse__counts_a_different_quorum_as_change_if_no_global_xpubs": NESTED_OR_LEGACY,
     "test_psbt_parser.py::test_parse_op_return_content_pushdata2": SPK_MAX,
-    # A parametrized test's psbts, by the start of their base64: P2PKH, P2SH-P2WSH and P2SH multisig
-    "test_psbt_parser.py::TestPSBTInputAmountVerification::test_untampered_psbts_verify[cHNidP8BADMCAAAAAa79*": NESTED_OR_LEGACY,
-    "test_psbt_parser.py::TestPSBTInputAmountVerification::test_untampered_psbts_verify[cHNidP8BADMCAAAAAbtb*": NESTED_OR_LEGACY,
+    # A parametrized test's psbt, by the start of its base64: P2SH multisig
     "test_psbt_parser.py::TestPSBTInputAmountVerification::test_untampered_psbts_verify[cHNidP8BADMCAAAAAarS*": NESTED_OR_LEGACY,
-    "test_psbt_parser.py::TestPSBTInputAmountVerification::test_segwit_input_without_non_witness_utxo_is_allowed[cHNidP8BADMCAAAAAbtb*": NESTED_OR_LEGACY,
 }
 
 
