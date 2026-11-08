@@ -6,6 +6,10 @@ from PIL import Image
 
 # A frame without a code: not None, as ScanScreen reads the buttons only after a frame
 NO_CODE = object()
+# Development only (serial keys on): qr_inject.txt's lines stand in for what the camera reads, a "---" line
+# ending each scan, so a flow can be measured without a screen to point it at
+_inject = None
+_inject_mid = False
 
 
 class CameraConnectionError(Exception):
@@ -28,8 +32,17 @@ class Camera:
         except OSError:
             raise CameraConnectionError()
         self._video_stream, self._animated = True, False
+        global _inject
+        from RPi import GPIO
+        if GPIO.serial_keys and _inject is None:
+            try:
+                _inject = open("qr_inject.txt")
+            except OSError:
+                _inject = False
+        self._injecting, self._injected = bool(_inject), 0
 
     def read_video_stream(self, as_image=False):
+        global _inject_mid
         if not self._video_stream:
             raise Exception("Must call start_video_stream first.")
         if as_image:
@@ -41,6 +54,19 @@ class Camera:
             data = _camera.read(2 if self._animated else 0)  # 2: the reader's budget for animated parts
         except OSError:
             raise CameraConnectionError()
+        if self._injecting:
+            line = _inject.readline().strip()
+            if not self._injected and _inject_mid:  # the last scan finished early: skip what it left
+                while line and line != "---":
+                    line = _inject.readline().strip()
+            if line == "---" and not self._injected:
+                line = _inject.readline().strip()
+            self._injected += 1
+            _inject_mid = bool(line) and line != "---"
+            if not line or line == "---":
+                self._injecting = False
+                return NO_CODE
+            data = line.encode()
         if not isinstance(data, bytes):
             return NO_CODE
         self._animated = data[:3].upper() == b"UR:"

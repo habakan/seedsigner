@@ -67,7 +67,9 @@ def _serial(channel):
             from seedsigner.hardware.displays.ST7789 import screenshot
             import gc
             gc.collect()
-            print("free", gc.mem_free())  # the heap, after the screen just drawn
+            import micropython, _wamr
+            micropython.mem_info()  # its last line has the largest free block, in 16-byte blocks
+            print("free", gc.mem_free(), "wamr", _wamr.pool_info())  # the heap, after the screen just drawn
             print("<<FB")
             screenshot(lambda part: print(binascii.b2a_base64(part, newline=False).decode()))
             print("FB>>")
