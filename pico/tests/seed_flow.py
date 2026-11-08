@@ -64,7 +64,6 @@ def run(port, n, network, reset, linger):
         while F.share(step("", "home", 5), lambda r, g, b: r > 200 and 100 < g < 180 and b < 60) < 0.12:  # the splash has 0.1
             if time.time() - boot > 120:
                 sys.exit("no home screen in 2 minutes")
-        time.sleep(8)  # the 5 s "remove the SD card" toast: its thread beside the camera's preview ran out of heap
         step("dp", "tools")
         start = time.time()
         green = lambda png: F.share(png, lambda r, g, b: g > 180 and r < 80 and b < 80)
