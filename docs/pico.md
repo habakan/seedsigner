@@ -204,13 +204,15 @@ RAM decided most of the way there:
 | parser.wasm built without its UR decoder (bitwasm-signer), pool 116 KB | 275 |
 | its stack 4 KB (1.7 KB used at most), pool 104 KB; C stack 20 KB, core1's 16 KB | 262 |
 
-Now the GC heap is about 259 KB beside 215 KB of static RAM. About 137 KB of it is free on the main menu,
-100 KB while scanning and 80 KB on the PSBT overview. The firmware, SeedSigner and 15 languages frozen in, is
+Now the GC heap is 236 KB: plan version 4 (520-byte witness scripts) grew the signer's static RAM and
+WAMR's pool went to 110 KB, 16 KB in all. 108 KB of it is free on the main menu and 47 to 70 KB from the
+PSBT overview to the signed QR. The firmware, SeedSigner and 15 languages frozen in, is
 2.29 MB of its 3 MB of flash; 1 MB is left for the filesystem.
 
 - The canvas is a list of drawing operations; an opaque one drops what it hides, or a keyboard's redraws
   pile up. A View's finished Screen is let go, or the back stack holds one per seed word.
-- Buffers the heap may not find late are static or taken at import: WAMR's module copy, the plan.
+- Buffers the heap may not find late are static or taken at import: WAMR's module copy. parser.wasm writes
+  the plan straight into the native signer's (`_bitwasm.plan_buffer()`), with no copy in the heap.
 - MicroPython is patched (`pico/patches/micropython-rp2.patch`): a GIL, as SeedSigner's threads assume
   CPython's; one static 16 KB core1 stack, as a heap one cannot be found and its MemoryError left core1
   claimed; a 20 KB C stack, as the camera's QR reader is called 20-odd Python calls deep.
@@ -224,15 +226,17 @@ Now the GC heap is about 259 KB beside 215 KB of static RAM. About 137 KB of it 
 
 ## A regtest spend
 
-`pico/tests/regtest.sh` checks the signature against Bitcoin Core: a watch-only wallet for the test seed
-funds a PSBT, the Pico (set to Regtest, the seed read from a SeedQR) scans, reviews and signs it, and the
-signed animated QR read back from its screen is finalized, accepted and mined. The first run's 0.1 tBTC
-spend confirmed (txid d640897e4ff1fa4f75853dd2c89e4f6bcfebd1706fe8411d5386965c4e2f4988, fee 282 sats).
+`pico/tests/regtest.py` checks the signatures against Bitcoin Core: a watch-only wallet for the test seed
+funds P2WPKH beside P2TR, P2PKH, and a 2-of-3 P2SH-P2WSH whose cosigner is another Core wallet. The Pico, set to
+Regtest and driven as `psbt_flow.py` drives it, signs each, and the animated QR read back from its screen is
+combined with the unsigned PSBT (the signed one holds only its signatures), finalized and mined. The QR took 13
+to 23 frames, 42 to 74 s of screenshots. The first spend, a lone P2WPKH shown to the camera, confirmed as txid
+d640897e4ff1fa4f75853dd2c89e4f6bcfebd1706fe8411d5386965c4e2f4988.
 
 ## What the Pico build gives up
 
-Whatever `signer.wasm` does not do: legacy P2PKH, addresses and message signing off the standard paths (a
-custom derivation's xpub is exported), multisig of more than six keys or nested in P2SH, Hindi, Thai, Persian and Arabic, and more than one CJK language at once (upstream's BIP39 wordlist setting is hidden, so
+Whatever `signer.wasm` does not do: addresses and message signing off the standard paths (a custom
+derivation's xpub is exported), legacy P2SH multisig, Hindi, Thai, Persian and Arabic, and more than one CJK language at once (upstream's BIP39 wordlist setting is hidden, so
 English words only on both). The tests that expect those stay on CPython.
 
 Electrum segwit seeds are read by the signer (`signer_seed_from_electrum`), which also checks their version and
@@ -242,7 +246,7 @@ multisig xpub for them (m/1h) and message signing are refused.
 ## Needed from bitwasm-signer
 
 - **Messages longer than 1024 bytes.** SeedSigner has no limit; its longest test message is 576.
-- **More of upstream's multisig:** more than six keys, and nested P2SH-P2WSH, both a change to the plan's ABI.
+- **Legacy P2SH multisig.** Few wallets still make it.
 
 ## Decisions
 
