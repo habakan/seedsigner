@@ -1,0 +1,9 @@
+diff --git a/ports/rp2/memmap_rp2350/default_text_excludes.incl b/ports/rp2/memmap_rp2350/default_text_excludes.incl
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/ports/rp2/memmap_rp2350/default_text_excludes.incl
+@@ -0,0 +1,3 @@
++/* For SeedSigner: libc and libm run from flash, 14 KB of RAM back; nothing that runs while flash is written calls them.
++   gc, vm and parse stay in RAM as memmap_rp2 has them, and so do libgcc's soft float, mem* and setjmp. */
++*(EXCLUDE_FILE(*libgcc.a:[!u]* *lib*_a-mem*.o *lib*_a-setjmp.o *py/gc.c.o *py/vm.c.o *py/parse.c.o) .text*)
