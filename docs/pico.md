@@ -204,9 +204,9 @@ RAM decided most of the way there:
 | parser.wasm built without its UR decoder (bitwasm-signer), pool 116 KB | 275 |
 | its stack 4 KB (1.7 KB used at most), pool 104 KB; C stack 20 KB, core1's 16 KB | 262 |
 
-Now the GC heap is 236 KB: plan version 4 (520-byte witness scripts) grew the signer's static RAM and
-WAMR's pool went to 110 KB, 16 KB in all. 108 KB of it is free on the main menu and 47 to 70 KB from the
-PSBT overview to the signed QR. The firmware, SeedSigner and 15 languages frozen in, is
+Now the GC heap is 249 KB: plan version 4 (520-byte witness scripts) grew the signer's static RAM and
+WAMR's pool went to 110 KB, 16 KB in all, and libc moved to flash gave 14 KB back. 88 KB of it is free on
+the main menu and 53 to 72 KB from the PSBT overview to the signed QR (`psbt_flow.py`'s twelve PSBTs). The firmware, SeedSigner and 15 languages frozen in, is
 2.29 MB of its 3 MB of flash; 1 MB is left for the filesystem.
 
 - The canvas is a list of drawing operations; an opaque one drops what it hides, or a keyboard's redraws
