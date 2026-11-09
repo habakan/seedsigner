@@ -5,7 +5,7 @@ from PIL import Image
 try:
     import _gfx
 except ImportError:  # CPython, testing
-    import gfx_sim as _gfx
+    from PIL import _gfx_sim as _gfx
 
 
 class QR:

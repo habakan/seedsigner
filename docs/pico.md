@@ -68,6 +68,7 @@ produces. At boot the imports take 63 ms, the seed 0.55 s, the PSBT 0.60 s, and 
 WAMR's 160 KB pool peaks at 157 KB on that PSBT, so larger ones or UR assembly may need more.
 
 ```sh
+git submodule update --init pico/third_party/micropython-pil   # the PIL and _gfx, once
 make -C pico rp2 BITWASM_SIGNER=<bitwasm-signer> PICO_TOOLCHAIN_PATH=<RISC-V GCC>   # then flash firmware.elf
 make -C pico device-install PORT=/dev/cu.usbmodem...    # main.py, once
 make -C pico mpy && make -C pico device-smoke PORT=...  # or run a script with the modules mounted
@@ -149,7 +150,8 @@ are caught.
 
 ## The screen
 
-SeedSigner's own screens draw on the Pico's ST7789 through a PIL of the Pico's (`pico/lib/PIL`):
+SeedSigner's own screens draw on the Pico's ST7789 through a PIL of the Pico's, now its own repository
+([micropython-pil](https://github.com/habakan/micropython-pil), a submodule at `pico/third_party/micropython-pil`):
 
 - The canvas is `_gfx`'s 240x240 framebuffer, one byte a pixel (a 6x6x6 colour cube and 40 greys, since
   SeedSigner's palette is greys), outside MicroPython's heap. Every other image is a list of drawing
@@ -184,7 +186,7 @@ animated UR PSBT frame in 118-148 ms (`pico/tests/qr_show.py`), plus the screen'
 `main.py` (`make device-install`) runs `Controller.start()` itself: the splash screen, then the main menu
 driven by the buttons. Getting there took:
 
-- Images (`resources/img`) converted to palette indices at build time (`pico/tools/make_images.py`).
+- Images (`resources/img`) converted to palette indices at build time (micropython-pil's `tools/make_images.py`).
 - A copy of the canvas, as a toast takes, run-length encoded by `_gfx.save` rather than a 57.6 KB buffer.
 - Version information from git at build time (`pico_version.py`), as SeedSigner OS has its version.json.
 - `sys.exc_info` is missing on the rp2 port, so `to_micropython.py` hands `traceback.print_exc` and

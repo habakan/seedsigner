@@ -1,6 +1,6 @@
 """
 helpers/qr.py of the Pico against SeedSigner's own, on CPython: each QR code drawn through the PIL shim and
-gfx_sim is read back with zbarimg. qrcode scores masks its own way, so where it picked another the version
+micropython-pil's _gfx_sim is read back with zbarimg. qrcode scores masks its own way, so where it picked another the version
 is compared; with the same matrix the pixels are, to within PIL's resampled edges.
 
     python3 pico/tests/check_qr.py OUT_DIR
@@ -48,10 +48,12 @@ for name, data in CASES:
 for k in [k for k in sys.modules if k == "PIL" or k.startswith("PIL.")]:
     del sys.modules[k]
 shim = types.ModuleType("PIL")
-shim.__path__ = [str(root / "pico/lib/PIL")]
+shim.__path__ = [str(root / "pico/third_party/micropython-pil/PIL")]
 sys.modules["PIL"] = shim
 sys.path.insert(0, str(root / "pico/tests"))
-import gfx_sim
+# _gfx_sim encodes with the qrcodegen bitwasm-signer-pico builds _gfx from, where it is not installed
+sys.path.append(str(root.parent / "bitwasm-signer-pico/third_party/QR-Code-generator/python"))
+from PIL import _gfx_sim as gfx_sim
 sys.modules["_gfx"] = gfx_sim
 spec = importlib.util.spec_from_file_location("pico_qr", root / "pico/lib/seedsigner/helpers/qr.py")
 pico_qr = importlib.util.module_from_spec(spec)

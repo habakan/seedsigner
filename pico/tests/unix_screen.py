@@ -1,7 +1,7 @@
 # pico/tests/screen.py on MicroPython's unix port: gfx_sim for _gfx and a Pin that is never pressed
 import sys, time
-sys.path.insert(0, "pico/tests")
-import gfx_sim
+sys.path.insert(0, "pico/third_party/micropython-pil/PIL")
+import _gfx_sim as gfx_sim
 sys.modules["_gfx"] = gfx_sim
 
 

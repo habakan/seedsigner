@@ -59,7 +59,7 @@ went different ways because the boards are different:
 | | upstream (ESP32-P4) | this fork (RP2350) |
 |---|---|---|
 | memory | PSRAM | 520 KB SRAM, no PSRAM |
-| screens | native LVGL screens behind a JSON screen contract | upstream's PIL screens, on a small PIL written for the Pico (`pico/lib/PIL`, drawing in C) |
+| screens | native LVGL screens behind a JSON screen contract | upstream's PIL screens, on a small PIL written for the Pico ([micropython-pil](https://github.com/habakan/micropython-pil), drawing in C) |
 | keys and PSBTs | embit, with C modules for secp256k1 and hashing | [bitwasm-signer](https://github.com/bitwasm-project/bitwasm-signer): its C signer linked in, its PSBT parser in WebAssembly on WAMR |
 | UR | cUR, in C | upstream's pure-Python ur2, with the heap in mind |
 | QR reading | | a Rust reader on the camera frame, in C |

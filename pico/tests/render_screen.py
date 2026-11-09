@@ -2,7 +2,7 @@
 SeedSigner's own MainMenuScreen through the Pico's PIL shim, on CPython: saves what the framebuffer holds
 and how far it is from real PIL's picture of the same screen, both in the framebuffer's palette.
 
-    python3 pico/tests/render_screen.py build/pico/fonts out.png
+    python3 pico/tests/render_screen.py build/pico/py out.png
 """
 import importlib.util, pathlib, sys, types
 from unittest.mock import MagicMock
@@ -12,14 +12,14 @@ from PIL import Image as RealImage  # the real one, for the comparison, before t
 
 # The shim as "PIL", the simulated _gfx, the bitmap fonts
 shim = types.ModuleType("PIL")
-shim.__path__ = [str(root / "pico/lib/PIL")]
+shim.__path__ = [str(root / "pico/third_party/micropython-pil/PIL")]
 real_pil = {k: v for k, v in sys.modules.items() if k == "PIL" or k.startswith("PIL.")}
 for k in real_pil:
     del sys.modules[k]
 sys.modules["PIL"] = shim
 sys.path.insert(0, str(root / "pico/tests"))
 sys.path.insert(0, sys.argv[1])
-import gfx_sim
+from PIL import _gfx_sim as gfx_sim
 sys.modules["_gfx"] = gfx_sim
 sys.modules["RPi"] = MagicMock()
 sys.modules["RPi.GPIO"] = MagicMock()

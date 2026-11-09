@@ -1,7 +1,7 @@
 # Imports SeedSigner's controller and every view on MicroPython's unix port, as the device would
 import sys
-sys.path.insert(0, "pico/tests")
-import gfx_sim
+sys.path.insert(0, "pico/third_party/micropython-pil/PIL")
+import _gfx_sim as gfx_sim
 sys.modules["_gfx"] = gfx_sim
 
 

@@ -71,7 +71,8 @@ def serve(port, path, log):
 
 
 def send(path, keys, png):
-    import gfx_sim
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "third_party/micropython-pil/PIL"))
+    import _gfx_sim as gfx_sim
     from PIL import Image
     c = socket.socket(socket.AF_UNIX)
     c.connect(path)

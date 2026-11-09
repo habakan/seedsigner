@@ -30,20 +30,23 @@ unix: $(OUT)/unix/libsigner.a
 	  WAMR_LIB_DIR=$(abspath ../build/wamr)
 .PHONY: unix
 
-# SeedSigner's Python as MicroPython runs it: dataclasses expanded, then pico/lib over the result.
-# st7789_mpy.py, the Pi's viper-emitter display driver, is not the Pico's
+# SeedSigner's Python as MicroPython runs it: dataclasses expanded, then pico/lib and micropython-pil's PIL
+# over the result. st7789_mpy.py, the Pi's viper-emitter display driver, is not the Pico's
+PIL_DIR = third_party/micropython-pil
 py:
+	@test -f $(PIL_DIR)/PIL/Image.py || { echo "git submodule update --init pico/third_party/micropython-pil"; exit 1; }
 	rm -rf $(OUT)/py
 	python3 tools/to_micropython.py $(OUT)/py ../src/seedsigner ../src/bitwasm_signer $(URTYPES)
 	cp -R lib/. $(OUT)/py/
+	cp -R $(PIL_DIR)/PIL $(OUT)/py/ && rm -rf $(OUT)/py/PIL/_gfx_sim.py $(OUT)/py/PIL/__pycache__
 	cp $(MPY_DIR)/lib/micropython-lib/python-stdlib/hmac/hmac.py \
 	  $(MPY_DIR)/lib/micropython-lib/python-stdlib/base64/base64.py \
 	  $(MPY_DIR)/lib/micropython-lib/python-stdlib/zlib/zlib.py \
 	  $(MPY_DIR)/lib/micropython-lib/python-stdlib/datetime/datetime.py $(OUT)/py/
 	cp $(MPY_DIR)/lib/micropython-lib/python-stdlib/os-path/os/path.py $(OUT)/py/os/
 	rm $(OUT)/py/seedsigner/hardware/displays/st7789_mpy.py
-	../.venv/bin/python tools/make_fonts.py $(OUT)/py/pico_fonts ../src/seedsigner/resources/fonts fonts_used.json $(LOCALES)
-	../.venv/bin/python tools/make_images.py $(OUT)/py/pico_images ../src/seedsigner/resources/img > /dev/null
+	../.venv/bin/python tools/make_fonts.py $(OUT)/py/pil_fonts ../src/seedsigner/resources/fonts fonts_used.json $(LOCALES)
+	../.venv/bin/python $(PIL_DIR)/tools/make_images.py $(OUT)/py/pil_images ../src/seedsigner/resources/img > /dev/null
 	../.venv/bin/python tools/make_l10n.py $(OUT)/py/pico_l10n ../src/seedsigner/resources/seedsigner-translations/l10n $(LOCALES) > /dev/null
 	printf 'NAME = "%s"\nFORK = "%s"\nSHORT_COMMIT_HASH = "%s"\n' "$$(git describe --tags --exact-match 2>/dev/null || git rev-parse --abbrev-ref HEAD)" \
 	  "$$(git remote get-url origin | sed -E 's|.*[:/]([^/]+)/[^/]+$$|\1|')" "$$(git rev-parse --short HEAD)" > $(OUT)/py/pico_version.py

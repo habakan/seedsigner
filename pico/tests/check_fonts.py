@@ -2,13 +2,13 @@
 The bitmap fonts' getbbox and getlength against PIL's, on CPython: every getbbox call rendering all the
 screens made (build/pico/fonts_used_bbox.json) and random ASCII strings in every font and anchor.
 
-    python3 pico/tests/check_fonts.py build/pico/fonts build/pico/fonts_used_bbox.json
+    python3 pico/tests/check_fonts.py build/pico/py build/pico/fonts_used_bbox.json
 """
 import importlib.util, json, pathlib, random, sys
 
 root = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, sys.argv[1])
-spec = importlib.util.spec_from_file_location("pico_imagefont", root / "pico/lib/PIL/ImageFont.py")
+spec = importlib.util.spec_from_file_location("pico_imagefont", root / "pico/third_party/micropython-pil/PIL/ImageFont.py")
 ours = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ours)
 from PIL import ImageFont
@@ -26,8 +26,8 @@ def pair(name, size):
     return mine[k], theirs[k]
 
 
-import pico_fonts  # a build makes only its languages' fonts
-cases = [(c[0], c[1], c[2], c[3]) for c in json.load(open(sys.argv[2])) if c[0].replace("-", "_") in pico_fonts.SIZES]
+import pil_fonts  # a build makes only its languages' fonts
+cases = [(c[0], c[1], c[2], c[3]) for c in json.load(open(sys.argv[2])) if c[0].replace("-", "_") in pil_fonts.SIZES]
 rnd = random.Random(1)
 made = sorted({(c[0], c[1]) for c in cases})
 for name, size in made:

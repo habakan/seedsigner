@@ -1,4 +1,4 @@
-"""SeedSigner's ST7789 on the Pico: an image's drawing (pico/lib/PIL/Image.py) is replayed into _gfx's band
+"""SeedSigner's ST7789 on the Pico: an image's drawing (micropython-pil's PIL/Image.py) is replayed into _gfx's band
 of rows, one band at a time, each sent to the LCD as it is done."""
 from PIL import Image, ImageDraw
 from seedsigner.hardware.displays.display_driver import BaseDisplayDriver
