@@ -156,9 +156,33 @@ Embench kernels ran about 15 times faster as WebAssembly on wasm3 or WAMR than a
 (Moron and Wallentowitz, [Benchmarking WebAssembly for Embedded Systems](https://doi.org/10.1145/3736169),
 2025). The parse being the one input an attacker controls, running it in a sandbox is the other reason.
 
-The test was one PSBT, with glue written only to run it; a port that tuned embit for the heap would get
-further, but a PSBT held as objects still grows with its inputs, and the parser's code still has to stay
-loaded.
+### With a larger heap and MicroPython's own advice
+
+MicroPython's guide to constrained devices ([The heap, Fragmentation](https://docs.micropython.org/en/latest/reference/constrained.html#fragmentation))
+says to allocate large buffers early and not to create and drop many small objects. Tried on the same
+device, with the scanned PSBT held in the GC heap as an embit port would hold it:
+
+- **A larger heap.** The embit build still carried bitwasm-signer's PSBT buffers (32 KB of prevtx, 13 KB of
+  plan and more) for its hashing and secp256k1. Shrinking them took the GC heap from 265 to 324 KB.
+- **`compress`.** embit's `PSBT.read_from(stream, compress=CompressMode.CLEAR_ALL)` streams each previous
+  transaction past and keeps only the spent output and the transaction's hash, where upstream reads them
+  into objects. The checks upstream makes on `non_witness_utxo` were made on what embit kept: the txid, and
+  that `witness_utxo` agrees. The signed PSBTs were upstream's bytes.
+- **The UR decoder's word table early.** Bytewords builds a 2.7 KB table at the first scanned part. On the
+  265 KB heap no hole was that large, and upstream's `URDecoder` drops a part on any exception, so the scan
+  sat on the camera screen without advancing. Building it at boot fixed that (this fork now does so too).
+
+| | 2 inputs | 10 inputs | 25 KB, 10 in and 200 out |
+|---|---|---|---|
+| embit, 265 KB, all three but the heap | MemoryError in the parse | MemoryError in the parse | |
+| embit, 324 KB, all three | signs | signs; 2.4 KB the largest hole | signs; a MemoryError drawing the QR screen's tip |
+| bitwasm-signer, 249 KB | signs | signs | signs; 53 to 72 KB free |
+
+So embit can sign a 25 KB PSBT on the RP2350, given 75 KB more heap than bitwasm-signer's build, a streamed
+parse, and buffers taken early, and then with 1 to 2 KB holes between it and a MemoryError. The techniques
+move the limit; a PSBT held as objects still grows with its inputs, and the parser's code still stays
+loaded. bitwasm-signer is that advice taken to its end: nothing per input in the heap, and the parse's
+working memory a buffer taken at boot.
 
 ## Reading QR codes
 
@@ -258,7 +282,7 @@ RAM decided most of the way there:
 | its stack 4 KB (1.7 KB used at most), pool 104 KB; C stack 20 KB, core1's 16 KB | 262 |
 
 Now the GC heap is 249 KB: plan version 4 (520-byte witness scripts) grew the signer's static RAM and
-WAMR's pool went to 110 KB, 16 KB in all, and libc moved to flash gave 14 KB back. 88 KB of it is free on
+WAMR's pool went to 110 KB, 16 KB in all, and libc moved to flash gave 14 KB back. 85 KB of it is free on
 the main menu and 53 to 72 KB from the PSBT overview to the signed QR (`psbt_flow.py`'s twelve PSBTs). The firmware, SeedSigner and 15 languages frozen in, is
 2.29 MB of its 3 MB of flash; 1 MB is left for the filesystem.
 

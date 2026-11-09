@@ -39,7 +39,7 @@ RP2350 RISC-V at 150 MHz, MicroPython 1.29.
 
 | | |
 |---|---:|
-| GC heap / free on the main menu / free through a PSBT review | 249 KB / 88 KB / 53-72 KB |
+| GC heap / free on the main menu / free through a PSBT review | 249 KB / 85 KB / 53-72 KB |
 | static RAM / of it, WAMR's pool, lent to the camera and QR reader while scanning | about 245 KB / 110 KB |
 | firmware (SeedSigner and 15 languages frozen in) / flash | 2.3 MB / 4 MB |
 | reading one QR frame | 0.33-0.44 s |
