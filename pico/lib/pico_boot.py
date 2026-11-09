@@ -374,6 +374,10 @@ FountainDecoder.validate_part = _validate_part
 FountainDecoder.reduce_mixed_by = _reduce_mixed_by
 FountainDecoder.process_simple_part = _process_simple_part
 _receive_part = URDecoder.receive_part
+# Bytewords' 2.7 KB table, made while the heap is whole: made at a scan's first part, it can find no hole, and
+# URDecoder drops every part on that MemoryError, so the scan never advances
+from seedsigner.helpers.ur2 import bytewords
+bytewords.decode_word("ae", 2)
 
 
 def _receive_part_whole(self, part):
