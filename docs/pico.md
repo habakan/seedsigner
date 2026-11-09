@@ -11,7 +11,8 @@ MicroPython, with every key operation in bitwasm-signer's `signer.wasm` and ever
   and PSBT review and signing. `parser.wasm` parses PSBTs and assembles UR.
 - The Python side talks to WAMR through one small class, `bitwasm_signer.wamr.Instance`. The browser
   simulator already swaps it for the browser's WebAssembly; on the Pico it becomes a MicroPython C module.
-- MicroPython has no `sha512`, `pbkdf2_hmac` or secp256k1, so embit cannot come along anyway.
+- MicroPython has no `sha512`, `pbkdf2_hmac` or secp256k1, so embit cannot come along without C modules
+  for them, and with them it runs out of heap on a two-input PSBT ("Why not embit" below).
 
 ## Stages
 
@@ -108,6 +109,56 @@ explorer and address verification use it either way, as upstream does from a des
 
 The signed PSBT is what `parser_finalize_trimmed` writes: the unsigned transaction and the signatures, as
 `PSBTParser.trim` leaves it, without embit. Previous transactions would otherwise make it tens of KB.
+
+## Why not embit
+
+Tried on the device on 2026-11-09, to see whether bitwasm-signer is needed at all once the heap had grown:
+embit frozen into the firmware, its hashing and secp256k1 as C modules (kdmukai's `_hashlib_ext` and
+secp256k1 bindings, over bitwasm-signer's C, since MicroPython has neither), WAMR left out, and upstream's
+`PSBTParser` and `sign_with` patched into SeedSigner's views for the test (not in this repository). The same
+two-input P2WPKH PSBT went through the same screens on both builds, with no screenshots taken:
+
+| screen | bitwasm-signer: free / largest hole | embit: free / largest hole |
+|---|---:|---:|
+| scan | 94.2 KB / 3.3 KB | 68.0 KB / 2.6 KB |
+| seed chosen | 75.1 KB / 2.9 KB | 52.9 KB / 1.1 KB |
+| PSBT overview | 65.8 KB / 2.2 KB | 45.4 KB / 1.4 KB |
+| PSBT math | 64.3 KB / 1.1 KB | 40.7 KB / 0.4-0.5 KB, then MemoryError |
+| signed QR | 72.6 KB / 2.4 KB | not reached |
+
+The embit build stopped at the math screen both times it was run, on 160 to 300-byte allocations for the
+screen's own parts and fonts. Three things add up:
+
+- **Code that stays loaded.** embit's modules and upstream's parser take 26 KB of heap before any PSBT is
+  read: module dictionaries, classes and functions, held for as long as the app runs.
+- **A PSBT as objects.** embit parses a PSBT into a tree of objects, one for each input, output, key,
+  derivation path, script and amount, each with its own dictionary. MicroPython allocates in 16-byte blocks,
+  so the tree is several times the PSBT's size: 17 KB for two inputs and 62 KB for ten, measured on their
+  own, against a 0.8 KB and a 3.5 KB PSBT. The views keep it alive through the whole review.
+- **Holes that never join.** MicroPython's garbage collector does not move live objects. Thousands of small
+  ones scattered through the heap leave 40 KB free in pieces too small for a 300-byte allocation.
+
+None of this is a leak; the objects are in use. bitwasm-signer avoids all three:
+
+- **The PSBT stays bytes.** The UR decoder keeps the scanned fragments as they arrived (2 KB pieces, or the
+  signer's prevtx buffer for a large PSBT), and `parser.wasm` reads them in place. Nothing becomes a Python
+  object per input or output.
+- **Parsing happens outside the heap.** `parser.wasm` runs on WAMR in a fixed 110 KB pool beside the heap
+  (lent to the camera and QR reader while scanning), and writes its plan straight into the native signer's
+  buffer (`_bitwasm.plan_buffer()`). Its working memory is that pool, reused by the next parse, so it
+  never fragments the heap.
+- **Signing is native C.** Keys and signatures stay in one C module; Python receives the signed PSBT,
+  already trimmed for the QR.
+
+So the views hold a few small Python values per screen, and the same flow signs PSBTs up to 25 KB, ten
+inputs and 200 outputs, with 53 to 72 KB free through the review. It is also faster: on a Cortex-M4,
+Embench kernels ran about 15 times faster as WebAssembly on wasm3 or WAMR than as Python on MicroPython
+(Moron and Wallentowitz, [Benchmarking WebAssembly for Embedded Systems](https://doi.org/10.1145/3736169),
+2025). The parse being the one input an attacker controls, running it in a sandbox is the other reason.
+
+The test was one PSBT, with glue written only to run it; a port that tuned embit for the heap would get
+further, but a PSBT held as objects still grows with its inputs, and the parser's code still has to stay
+loaded.
 
 ## Reading QR codes
 

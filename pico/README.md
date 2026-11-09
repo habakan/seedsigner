@@ -67,7 +67,9 @@ went different ways because the boards are different:
 The signer is the larger difference. Stock MicroPython has no SHA-512, PBKDF2 or secp256k1, and the
 RP2350 has no room for a second copy of what a PSBT parse holds. bitwasm-signer keeps every key inside
 one C module whose review of a PSBT is checked against Bitcoin Core, and parses the PSBT, the one input
-an attacker controls, inside a WebAssembly sandbox.
+an attacker controls, inside a WebAssembly sandbox. embit itself was tried on the RP2350, with C modules for
+its crypto: it ran out of heap on a two-input PSBT, where this build signs 25 KB ones (`docs/pico.md`,
+"Why not embit").
 
 ## What changed in SeedSigner's source
 
