@@ -32,6 +32,8 @@ Checked against other software, not only against itself:
   same PSBT (P2TR differs by design: the signature stays a `tap_key_sig`).
 - `pico/tests/seed_flow.py`: a seed made from the camera is read back from its SeedQR and its xpub QR;
   the words are a valid mnemonic whose xpub, derived on the host, is the one the device shows.
+- Without the device: `make -C pico sim` builds the same Python into MicroPython's unix port (Linux), where
+  `psbt_flow.py sim` drives the same screens ([docs/pico.md](../docs/pico.md#without-the-device)).
 
 ## Measured
 

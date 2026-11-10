@@ -312,6 +312,24 @@ combined with the unsigned PSBT (the signed one holds only its signatures), fina
 to 23 frames, 42 to 74 s of screenshots. The first spend, a lone P2WPKH shown to the camera, confirmed as txid
 d640897e4ff1fa4f75853dd2c89e4f6bcfebd1706fe8411d5386965c4e2f4988.
 
+## Without the device
+
+`make -C pico sim` freezes the same Python into MicroPython's unix port, with micropython-pil's `_gfx`
+drawing to no display, and `pico/tests/sim_main.py` stands in for the dev main.py: the buttons come from
+stdin and the camera reads the UR frames `psbt_flow.py` injects. `psbt_flow.py sim` then scans, reviews and
+signs through the same screens and reads the signed PSBT off the screen's QR. Six of its PSBTs (two to 16
+P2WPKH inputs, the 25 KB one, P2PKH, P2SH-P2WSH 2-of-3 and P2TR) sign into the bytes this machine signs.
+
+It runs on Linux: on macOS the unix port crashed in SeedSigner's threads, with the heap corrupted. The port
+is 64-bit and given a 1 MB heap, so memory is measured on the device only.
+
+```sh
+tools/pico/libiwasm.sh                                     # WAMR for the unix port, once
+make -C pico sim BITWASM_SIGNER=<bitwasm-signer>
+.venv/bin/python pico/tests/psbt_cases.py build/pico/cases.json
+BITWASM_SIGNER_LIBIWASM=build/wamr/libiwasm.so .venv/bin/python pico/tests/psbt_flow.py sim build/pico/cases.json
+```
+
 ## What the Pico build gives up
 
 Whatever `signer.wasm` does not do: addresses and message signing off the standard paths (a custom

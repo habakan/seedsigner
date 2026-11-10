@@ -7,6 +7,10 @@ SeedSigner signs and trims, from git at UPSTREAM. P2TR differs from upstream by 
 
     .venv/bin/python pico/tests/psbt_flow.py PORT CASES.json [NAME...] [--reset CMD] [--upstream REF]
 
+PORT "sim" runs them on MicroPython's unix port instead (make -C pico sim), reading the signed PSBT off the screen's
+QR: no device, but a 64-bit heap, so its numbers are not the Pico's. SIM_MICROPYTHON names another build of it, and
+DRIVE_SOCK another socket, for a directory that cannot hold one (a container's mount).
+
 --reset CMD runs before each PSBT, a shell command resetting the device, as openocd writing its watchdog
 (mww 0x400d8000 0x80000000): a soft reboot leaves WAMR's pool and the native signer as they were.
 """
@@ -14,7 +18,8 @@ import argparse, base64, binascii, json, os, pathlib, re, subprocess, sys, time
 
 R = pathlib.Path(__file__).resolve().parents[2]
 OUT = R / "build/pico/psbt_flow"
-SOCK = "build/pico/d.sock"  # relative: a Unix socket's path is short
+SOCK = os.environ.get("DRIVE_SOCK", "build/pico/d.sock")  # relative: a Unix socket's path is short
+SIM = OUT / "sim"  # the unix port's working directory, its filesystem
 DRIVE = [sys.executable, str(R / "pico/tests/drive.py")]
 SEEDQR = "0000" * 11 + "0003"  # abandon x11 about, Standard SeedQR
 SIGNED = """import binascii
@@ -38,12 +43,16 @@ def frames(raw):
 
 def put(port, name, text):
     """text into the device's file name, through the raw REPL in 4 KB scripts: it compiles each on the heap."""
+    if port == "sim":
+        return str((SIM / name).write_text(text))
     return repl(port, [f"f = open({name!r}, {'wa'[k > 0]!r})\nf.write({text[i:i + 4000]!r})\nf.close()\n"
                        f"import os\nprint(os.stat({name!r})[6])\n" for k, i in enumerate(range(0, len(text), 4000))])
 
 
 def remove(port, name):
     """Removes the device's file name: a qr_inject.txt left behind stands in for the camera in a later, manual scan."""
+    if port == "sim":
+        return (SIM / name).unlink(missing_ok=True)
     return repl(port, [f"import os\ntry:\n os.remove({name!r})\nexcept OSError:\n pass\nprint('removed')\n"], reboot=True)
 
 
@@ -109,6 +118,8 @@ def screen_qr(shot, secs=300):
 
 
 def run(port, name, raw, reset, network=None, from_screen=False):
+    sim = port == "sim"
+    from_screen = from_screen or sim  # the unix port has no REPL to ask
     lines = frames(raw)
     text = "\n".join(lines + ["---", SEEDQR, "---"]) + "\n"
     if reset:
@@ -121,7 +132,8 @@ def run(port, name, raw, reset, network=None, from_screen=False):
         sys.exit("settings.json did not reach the device")
     log = OUT / f"{name}.log"
     log.write_bytes(b"")
-    serve = subprocess.Popen(DRIVE + ["serve", port, SOCK, str(log)], cwd=R, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    serve = subprocess.Popen(DRIVE + (["sim", str(SIM)] if sim else ["serve", port]) + [SOCK, str(log)], cwd=R,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         time.sleep(30)  # main.py's boot
         seen = [0]
@@ -133,12 +145,12 @@ def run(port, name, raw, reset, network=None, from_screen=False):
             subprocess.run(DRIVE + ["send", SOCK, "", str(png)], cwd=R, capture_output=True)
             text = log.read_bytes().decode(errors="replace").replace("\r", "")
             tail, seen[0] = text[seen[0]:], len(text)
-            largest = re.findall(r"max free sz: (\d+)", text)  # in 16-byte blocks
+            largest = re.findall(r"max free sz: (\d+)", text)  # in blocks, 16 bytes on the Pico and 32 on 64-bit
             free = re.findall(r"^free (\d+) wamr \((-?\d+), (-?\d+), (-?\d+)\)", text, re.M)
             free = free[-1] if free else ("?",) * 4
             notes = ("  ERROR" if 'File "main.py"' in tail and "KeyboardInterrupt" not in tail else "") + \
                     ("  (MemoryError in a thread)" if "Unhandled exception in thread" in tail and "MemoryError" in tail else "")
-            print(f"  {label:10s} free {free[0]:>7} largest {int(largest[-1]) * 16 if largest else '?':>6} wamr peak {free[3]:>7}{notes}")
+            print(f"  {label:10s} free {free[0]:>7} largest {int(largest[-1]) * (32 if sim else 16) if largest else '?':>6} wamr peak {free[3]:>7}{notes}")
             return png, bool(notes.startswith("  ERROR"))
 
         from PIL import Image, ImageChops
@@ -159,7 +171,7 @@ def run(port, name, raw, reset, network=None, from_screen=False):
             if bad or (share(png, lambda r, g, b: r + g + b >= 192) < 0.01 and share(png, lambda r, g, b: r + g + b >= 96) > 0.2):
                 break
         if from_screen:
-            return screen_qr(lambda: step("", "qr", 0)[0])
+            return screen_qr(lambda: step("", "qr", 0)[0], 900 if sim else 300)  # 16 inputs: 83 parts
         (OUT / "signed.py").write_text(SIGNED)
         out = subprocess.run(DRIVE + ["exec", SOCK, str(OUT / "signed.py"), "8"], cwd=R, capture_output=True, text=True).stdout
     finally:
@@ -174,7 +186,7 @@ if __name__ == "__main__":
     a.add_argument("port"); a.add_argument("cases"); a.add_argument("names", nargs="*")
     a.add_argument("--reset"); a.add_argument("--upstream", default="ada81cde")
     args = a.parse_args()
-    OUT.mkdir(parents=True, exist_ok=True)
+    SIM.mkdir(parents=True, exist_ok=True)
     cases = json.load(open(args.cases))
     for name in args.names or cases:
         raw = base64.b64decode(cases[name])

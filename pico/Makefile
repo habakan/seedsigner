@@ -90,6 +90,14 @@ device-install-dev:
 	mpremote connect $(PORT) cp $(OUT)/main.py :main.py
 .PHONY: device-install-dev
 
+# The device without the device: the unix port with SeedSigner frozen in and micropython-pil's _gfx drawing to no
+# display, for pico/tests/sim_main.py (psbt_flow.py sim). Linux only: on macOS the port crashed in SeedSigner's threads
+sim: py patch $(OUT)/unix/libsigner.a
+	$(MAKE) -C $(MPY_DIR)/ports/unix -j8 BUILD=build-sim MICROPY_PY_THREAD_GIL=1 FROZEN_MANIFEST=$(abspath manifest_sim.py) \
+	  USER_C_MODULES="$(abspath modules) $(abspath $(PIL_DIR)/cmod)" BITWASM_SIGNER=$(abspath $(BS)) \
+	  BITWASM_SIGNER_LIB=$(abspath $(OUT)/unix/libsigner.a) WAMR_ROOT=$(abspath $(WAMR_ROOT)) WAMR_LIB_DIR=$(abspath ../build/wamr)
+.PHONY: sim
+
 # Run a script on the device with the modules mounted from the host: make device-smoke PORT=/dev/cu.usbmodem...
 device-%:
 	mpremote connect $(PORT) mount $(OUT)/mpy run tests/$*.py
