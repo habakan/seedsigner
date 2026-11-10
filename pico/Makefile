@@ -26,7 +26,7 @@ $(OUT)/unix/libsigner.a: $(SIGNER_SRC)
 
 unix: $(OUT)/unix/libsigner.a
 	$(MAKE) -C $(MPY_DIR)/ports/unix -j8 USER_C_MODULES=$(abspath modules) \
-	  BITWASM_SIGNER_LIB=$(abspath $(OUT)/unix/libsigner.a) WAMR_ROOT=$(abspath $(WAMR_ROOT)) \
+	  BITWASM_SIGNER=$(abspath $(BS)) BITWASM_SIGNER_LIB=$(abspath $(OUT)/unix/libsigner.a) WAMR_ROOT=$(abspath $(WAMR_ROOT)) \
 	  WAMR_LIB_DIR=$(abspath ../build/wamr)
 .PHONY: unix
 

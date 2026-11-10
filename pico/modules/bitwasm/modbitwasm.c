@@ -410,14 +410,14 @@ static mp_obj_t memory(void) {
         hi = (uintptr_t)p[i] > hi ? (uintptr_t)p[i] : hi;
     }
     base = lo;
-    return mp_obj_new_bytearray_by_ref(hi - lo + 32768, (void *)lo);
+    return mp_obj_new_bytearray_by_ref(hi - lo + BITWASM_PREVTX_MAX, (void *)lo);
 }
 static MP_DEFINE_CONST_FUN_OBJ_0(memory_obj, memory);
 
 /* prevtx_buf alone: memory()'s offsets reach past what a MicroPython memoryview can start at, and the Pico
- * keeps a scanned PSBT here (pico_boot.py). 32768 is wasm_main.c's PREVTX_MAX */
+ * keeps a scanned PSBT here (pico_boot.py). BITWASM_PREVTX_MAX is wasm_main.c's, read by micropython.cmake */
 static mp_obj_t prevtx_buffer(void) {
-    return mp_obj_new_bytearray_by_ref(32768, (void *)signer_prevtx());
+    return mp_obj_new_bytearray_by_ref(BITWASM_PREVTX_MAX, (void *)signer_prevtx());
 }
 static MP_DEFINE_CONST_FUN_OBJ_0(prevtx_buffer_obj, prevtx_buffer);
 

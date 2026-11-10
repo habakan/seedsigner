@@ -125,14 +125,19 @@ from bitwasm_signer.signer import MAX_INPUTS, PLAN_N_INPUTS, PREVTX_MAX
 from seedsigner.helpers import bitwasm
 
 
+try:
+    import _bitwasm
+    PREVTX_MAX = len(_bitwasm.prevtx_buffer())  # the firmware's own size, which signer.py's copy can miss
+except ImportError:
+    _bitwasm = None
+
+
 def _prevtx_buffer():
     # The firmware's prevtx_buf (modbitwasm.c); a wasm signer, on a PC, exposes it through its memory
-    try:
-        import _bitwasm
+    if _bitwasm:
         return _bitwasm.prevtx_buffer()
-    except ImportError:
-        S = bitwasm._load_signer()
-        return memoryview(S._m)[S._e.signer_prevtx():S._e.signer_prevtx() + PREVTX_MAX]
+    S = bitwasm._load_signer()
+    return memoryview(S._m)[S._e.signer_prevtx():S._e.signer_prevtx() + PREVTX_MAX]
 from seedsigner.helpers.bitwasm import BitwasmError
 from seedsigner.helpers.ur2.fountain_decoder import FountainDecoder, InvalidChecksum
 from seedsigner.helpers.ur2.ur_decoder import URDecoder

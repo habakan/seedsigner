@@ -18,5 +18,12 @@ target_compile_options(bitwasm_signer PRIVATE -Os -Wno-unused-function -ffunctio
 add_library(usermod_bitwasm INTERFACE)
 target_sources(usermod_bitwasm INTERFACE ${CMAKE_CURRENT_LIST_DIR}/modbitwasm.c)
 target_include_directories(usermod_bitwasm INTERFACE ${BS}/parser/c/include)
+# prevtx_buf's size, which wasm_main.c keeps to itself: modbitwasm.c's views of it must not outrun it
+file(STRINGS ${BS}/signer/wasm_main.c PREVTX_DEF REGEX "^#define PREVTX_MAX [0-9]+$")
+if(NOT PREVTX_DEF)
+  message(FATAL_ERROR "no #define PREVTX_MAX in ${BS}/signer/wasm_main.c")
+endif()
+string(REGEX REPLACE ".* " "" PREVTX_MAX "${PREVTX_DEF}")
+target_compile_definitions(usermod_bitwasm INTERFACE BITWASM_PREVTX_MAX=${PREVTX_MAX})
 target_link_libraries(usermod_bitwasm INTERFACE bitwasm_signer)
 target_link_libraries(usermod INTERFACE usermod_bitwasm)
