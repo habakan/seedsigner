@@ -101,4 +101,4 @@ already signed, an OP_RETURN over 80 bytes); they are marked in `tests/conftest.
 ## More
 
 `docs/pico.md` is the engineering record: each stage, what MicroPython needed, how the RAM was found,
-and how to build and flash.
+the parts and wiring ([Hardware](../docs/pico.md#hardware)), and how to build and flash.

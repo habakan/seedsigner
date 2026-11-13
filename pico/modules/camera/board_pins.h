@@ -1,7 +1,7 @@
 #ifndef BOARD_PINS_H
 #define BOARD_PINS_H
 
-/* The GPIO assignment from docs/hardware.md; change both together */
+/* The GPIO assignment in docs/pico.md, "Hardware"; change both together */
 
 #define PIN_LCD_RES 0 /* was the Debug Probe's UART TX: a reset the firmware drives, so a flash cannot leave the LCD out of step */
 

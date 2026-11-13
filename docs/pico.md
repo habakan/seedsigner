@@ -207,6 +207,39 @@ What MicroPython needed:
 Fragmentation is the device's open risk: a 32 KB PSBT will want its buffer taken early, as the UR
 message's now is.
 
+## Hardware
+
+The device is the one bitwasm-signer-pico is built on, on a breadboard
+([parts](https://github.com/bitwasm-project/bitwasm-signer-pico/blob/main/docs/hardware.md)), with SeedSigner's
+controls in place of its two switches and the screen's RES on a GPIO, so that a flash also resets it.
+
+| part | here |
+|---|---|
+| board | Raspberry Pi Pico 2 H (RP2350) |
+| screen | M154-240240-RGB, 1.54" 240x240 ST7789V: VCC to 3V3, CS to GND, BLK to 3V3 |
+| camera | OV7675 board (Arducam B0070), on 3V3; an OV7670 works with its own regulators |
+| controls | AE-SKRHAAE010-BO 5-way joystick kit (pulled up on the kit); three tactile switches to GND for KEY1-3 |
+
+Seeds typed word by word need KEY1-3, for the suggestions beside the keyboard; everything else, SeedQR
+included, works with the joystick alone. The firmware is flashed as `firmware.uf2` in BOOTSEL mode, or
+over SWD with a Debug Probe. `pico/modules/camera/board_pins.h` is the assignment the firmware uses:
+
+| GPIO | to | GPIO | to |
+|---|---|---|---|
+| GP0 | screen RES | GP16 | screen DC |
+| GP1 | KEY3 | GP17 | joystick left |
+| GP2-GP9 | camera D0-D7, in order: PIO reads them as one run | GP18 | screen SCL (SPI0 SCK) |
+| GP10 | camera PCLK | GP19 | screen SDA (SPI0 TX) |
+| GP11 | camera HREF | GP20 | joystick up |
+| GP12 | camera VSYNC | GP21 | camera XCLK |
+| GP13 | joystick right | GP22 | joystick down |
+| GP14 | camera SIO-D (I2C1 SDA) | GP26 | joystick press |
+| GP15 | camera SIO-C (I2C1 SCL) | GP27 / GP28 | KEY1 / KEY2 |
+
+The directions are SeedSigner's, as the joystick sits here, turned 90 degrees on the board; one turned
+another way is matched by swapping its pins in `pico/lib/RPi/GPIO.py`, not by rewiring. The screen is
+mounted upside down (`LCD_FLIP`).
+
 ## The camera
 
 `pico/modules/camera` is bitwasm-signer-pico's DVP camera driver (OV7670/OV7675) and its Rust QR reader
