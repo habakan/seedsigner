@@ -98,6 +98,50 @@ already signed, an OP_RETURN over 80 bytes); they are marked in `tests/conftest.
 - The heap is the risk: some screens have little to spare, and a scan that runs out of it stops
   advancing. The development build logs what the UR decoder drops.
 
+## Build one
+
+The parts and the wiring are in [docs/pico.md](../docs/pico.md#hardware): a Pico 2 H, a 1.54" ST7789 screen,
+an OV7675 camera board, a 5-way joystick and three switches, on a breadboard.
+
+The firmware builds on macOS (arm64) or Linux (x86_64) with git, CMake, [uv](https://docs.astral.sh/uv/) (for
+Python 3.12, which the pinned Pillow needs) and [rustup](https://rustup.rs) (it installs the Rust that
+`pico/modules/camera/qr_reader` pins). Everything else is fetched at a fixed version:
+
+```sh
+git clone -b feat/pico-on-dev https://github.com/habakan/seedsigner && cd seedsigner
+git submodule update --init pico/third_party/micropython-pil src/seedsigner/resources/seedsigner-translations
+uv venv -p 3.12 .venv && uv pip install -p .venv/bin/python -r requirements.txt
+uv pip install -p .venv/bin/python mpremote babel setuptools
+.venv/bin/python setup.py compile_catalog    # the translations' .mo files, which the build freezes in
+
+# MicroPython 1.29.0, which the patches in pico/patches apply to
+git clone --depth 1 -b v1.29.0 https://github.com/micropython/micropython build/micropython
+make -C build/micropython/mpy-cross
+
+# bitwasm-signer at the commit this build links, with secp256k1 and WAMR 2.4.5
+git clone https://github.com/bitwasm-project/bitwasm-signer ../bitwasm-signer
+(cd ../bitwasm-signer && git checkout --detach 91d2c5d && make deps wamr-deps)
+
+# Raspberry Pi's RISC-V GCC: riscv-toolchain-16 from pico-sdk-tools v2.3.1-0, unpacked to ../riscv-toolchain
+# https://github.com/raspberrypi/pico-sdk-tools/releases/tag/v2.3.1-0
+PICO_TOOLCHAIN_PATH=$PWD/../riscv-toolchain make -C build/micropython/ports/rp2 BOARD=RPI_PICO2 BOARD_VARIANT=RISCV submodules
+make -C pico rp2 BITWASM_SIGNER=$PWD/../bitwasm-signer PICO_TOOLCHAIN_PATH=$PWD/../riscv-toolchain
+```
+
+Both paths have to be absolute. Keep the checkout's path short, too: MicroPython keeps each frozen module's
+output path as a name of at most 255 bytes, and a deep directory fails with `name too long`.
+
+To flash, hold BOOTSEL while plugging the Pico in and copy
+`build/micropython/ports/rp2/build-RPI_PICO2-RISCV/firmware.uf2` to the drive that appears. SeedSigner is
+frozen into the firmware; the filesystem needs only the `main.py` that starts it, written once:
+
+```sh
+PATH=$PWD/.venv/bin:$PATH make -C pico device-install PORT=/dev/cu.usbmodem...   # /dev/ttyACM0 on Linux
+```
+
+After a reset the screen shows SeedSigner's main menu. If it stays blank, `mpremote connect <port> repl` and
+`import selftest` check the seed and PSBT code without the screen.
+
 ## More
 
 `docs/pico.md` is the engineering record: each stage, what MicroPython needed, how the RAM was found,
