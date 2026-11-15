@@ -1,5 +1,9 @@
 # SeedSigner on the Raspberry Pi Pico 2
 
+> [!IMPORTANT]
+> **Moved to [habakan/seedsigner-pico](https://github.com/habakan/seedsigner-pico).** This branch is kept so that
+> links to it still work, but gets no further changes. The port continues there, with the same history.
+
 SeedSigner's own Python, its controller, views and models, running on an RP2350 under MicroPython 1.29,
 with a 240x240 ST7789 screen, a DVP camera, a joystick and three keys. The flows are upstream's: the
 same screens, in the same order, from the same source. What changes is underneath them.
